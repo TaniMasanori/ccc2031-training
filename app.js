@@ -166,7 +166,10 @@
         const ex=D.exercises[id], on=l&&l.items&&l.items[id];
         const nm = lang()==="en"?ex.en:ex.jp;
         const cue = lang()==="en"?(ex.cue.en||ex.cue.jp):ex.cue.jp;
+        const vid = "https://www.youtube.com/results?search_query="+encodeURIComponent(ex.en+" exercise form");
         inner += `<div class="ex ${on?'on':''}" data-ex="${id}">
+          <a class="ex-thumb" href="${vid}" target="_blank" rel="noopener noreferrer" data-vid aria-label="${nm} の動画 / watch video">
+            <img src="img/${id}.jpg" alt="${nm}" loading="lazy"><span class="play" aria-hidden="true"></span></a>
           <div class="check">${CHECK}</div>
           <div class="body"><div class="name">${nm}</div><div class="cue">${cue}</div></div>
           <div class="dose mono">${ex.dose}</div></div>`;
@@ -209,6 +212,13 @@
   function bindToday(){
     main().querySelectorAll(".daystrip .d").forEach(el=>{
       el.onclick = () => { selDate = el.dataset.d; renderToday(); };
+    });
+    main().querySelectorAll(".ex-thumb").forEach(a=>{
+      a.addEventListener("click", e=> e.stopPropagation());   // open video without toggling done
+      const img = a.querySelector("img");
+      if(img){ const miss=()=>a.classList.add("noimg");
+        img.addEventListener("error", miss);
+        if(img.complete && img.naturalWidth===0) miss(); }   // catch already-failed loads
     });
     main().querySelectorAll(".ex").forEach(el=>{
       el.onclick = () => {

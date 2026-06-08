@@ -1,5 +1,5 @@
 /* CCC 2031 — service worker (offline shell cache) */
-const CACHE = "ccc2031-v1";
+const CACHE = "ccc2031-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,7 +10,9 @@ const ASSETS = [
   "./icon-192.png",
   "./icon-512.png",
   "./icon-maskable-512.png",
-  "./apple-touch-icon.png"
+  "./apple-touch-icon.png",
+  "./img/ea1.jpg","./img/ea2.jpg","./img/ea3.jpg","./img/ea5.jpg",
+  "./img/eb1.jpg","./img/eb2.jpg","./img/eb3.jpg","./img/eb4.jpg","./img/eb5.jpg"
 ];
 
 self.addEventListener("install", e => {

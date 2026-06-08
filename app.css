@@ -106,6 +106,22 @@ main{flex:1;padding:18px 16px calc(var(--tabbar-h) + env(safe-area-inset-bottom)
 .ex .cue{font-size:12px;color:var(--faint);margin-top:1px}
 .ex .dose{font-family:var(--font-mono);font-size:13px;color:var(--blaze-2);font-variant-numeric:tabular-nums;flex:none}
 .ex.on .dose{color:var(--faint)}
+/* exercise thumbnail → tap to open the demo video */
+.ex-thumb{flex:none;position:relative;width:54px;height:54px;border-radius:var(--r-sm);overflow:hidden;
+  display:block;text-decoration:none;border:1px solid var(--line);
+  background:linear-gradient(150deg,var(--surface-3),var(--surface-2))}
+.ex-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ex-thumb.noimg img{display:none}
+.ex-thumb .play{position:absolute;right:4px;bottom:4px;width:18px;height:18px;border-radius:50%;
+  background:rgba(13,15,19,.62);display:flex;align-items:center;justify-content:center;transition:.15s}
+.ex-thumb .play::after{content:"";border-style:solid;border-width:4px 0 4px 7px;
+  border-color:transparent transparent transparent var(--blaze);margin-left:1.5px}
+.ex-thumb.noimg .play{right:50%;bottom:50%;transform:translate(50%,50%);width:26px;height:26px;background:var(--blaze-dim)}
+.ex-thumb.noimg .play::after{border-width:5.5px 0 5.5px 9px}
+.ex-thumb:active{transform:scale(.95)}
+.ex-thumb:active .play{background:var(--blaze)}
+.ex-thumb:active .play::after{border-left-color:#0d0f13}
+.ex.on .ex-thumb img{opacity:.45;filter:saturate(.55)}
 
 /* run / distance ---------------------------------------------- */
 .distrow{display:flex;align-items:center;gap:12px;margin:14px 0 4px}

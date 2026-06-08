@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>CCC 2031 Training</title>
+<meta name="description" content="Trail training menu, tracking & weekly progress toward UTMB CCC 2031.">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0d0f13">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CCC2031">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+
+<!-- atmospheric topographic backdrop -->
+<div class="topo-bg" aria-hidden="true">
+  <svg viewBox="0 0 400 400" fill="none" stroke="#ff6a2b" stroke-width="0.7">
+    <g opacity="0.5">
+      <path d="M-20 320 C60 300 120 250 200 250 C280 250 340 300 420 320" stroke-opacity="0.10"/>
+      <path d="M-20 290 C60 268 120 214 200 214 C280 214 340 268 420 290" stroke-opacity="0.13"/>
+      <path d="M-20 262 C70 238 130 180 200 180 C270 180 330 238 420 262" stroke-opacity="0.16"/>
+      <path d="M-20 236 C80 210 140 150 200 150 C260 150 320 210 420 236" stroke-opacity="0.13"/>
+      <path d="M-20 212 C90 184 150 124 200 124 C250 124 310 184 420 212" stroke-opacity="0.10"/>
+      <path d="M-20 190 C100 160 160 102 200 102 C240 102 300 160 420 190" stroke-opacity="0.07"/>
+    </g>
+  </svg>
+</div>
+
+<div id="app">
+  <header class="top">
+    <div class="brandrow">
+      <div class="brand">
+        <svg class="peak" viewBox="0 0 24 24" fill="none" stroke="#ff6a2b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 19 L9 9 L13 14 L17 6 L21 19 Z"/>
+          <circle cx="17" cy="6" r="1.4" fill="#3fb98f" stroke="none"/>
+        </svg>
+        <b>CCC&nbsp;2031</b><span>Training</span>
+      </div>
+      <div class="countdown">
+        <div class="n" id="cdN">—</div>
+        <div class="u" id="cdU">days</div>
+      </div>
+    </div>
+  </header>
+
+  <main id="main"><!-- views render here --></main>
+
+  <nav class="tabbar">
+    <div class="tab active" data-tab="today">
+      <svg viewBox="0 0 24 24"><path d="M12 3 L4 10 v10 h16 V10 Z"/><path d="M9 20 v-6 h6 v6"/></svg>
+      今日
+    </div>
+    <div class="tab" data-tab="week">
+      <svg viewBox="0 0 24 24"><path d="M4 20 V4"/><path d="M4 20 H20"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/></svg>
+      週
+    </div>
+    <div class="tab" data-tab="log">
+      <svg viewBox="0 0 24 24"><path d="M4 6 h16"/><path d="M4 12 h16"/><path d="M4 18 h10"/><path d="M18 17 l1.5 1.5 L22 16"/></svg>
+      記録
+    </div>
+    <div class="tab" data-tab="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2 v3 M12 19 v3 M2 12 h3 M19 12 h3 M5 5 l2 2 M17 17 l2 2 M19 5 l-2 2 M7 17 l-2 2"/></svg>
+      設定
+    </div>
+  </nav>
+</div>
+
+<!-- edit sheet -->
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet"></div>
+
+<div id="toast"></div>
+
+<script src="./data.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

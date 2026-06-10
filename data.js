@@ -7,6 +7,14 @@ window.CCC_DATA = {
   raceName: { jp: "UTMB CCC", en: "UTMB CCC" },
   raceDate: "2031-08-29",
 
+  /* Milestone races on the way to CCC — seeds settings.races (editable in Settings).
+     The Week tab shows the next upcoming one + a training-phase tag. */
+  races: [
+    { name: "Boulder Rez Marathon", date: "2026-08-15", note: "controlled effort" },
+    { name: "Black Squirrel Half",  date: "2026-09-12", note: "dress rehearsal" },
+    { name: "Bear Chase 50K",       date: "2026-10-03", note: "A-race" }
+  ],
+
   /* Exercise library, keyed by id. dose = sets×reps/hold. */
   exercises: {
     // --- Strength A : knee + eccentric focus ---

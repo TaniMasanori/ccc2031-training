@@ -1,5 +1,5 @@
 /* CCC 2031 — service worker (offline shell cache) */
-const CACHE = "ccc2031-v2";
+const CACHE = "ccc2031-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -16,7 +16,13 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Cache the new shell but DON'T auto-activate — wait so the app can show an
+  // "update available" toast. The page posts SKIP_WAITING when the user taps.
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+});
+
+self.addEventListener("message", e => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", e => {

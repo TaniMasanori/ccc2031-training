@@ -1,0 +1,153 @@
+/* ============================================================
+   CCC 2031 — smoke tests (jsdom, node:test)
+   The shipped app stays dependency-free; jsdom is a devDependency
+   used only here. Each test boots a fresh jsdom window, seeds
+   localStorage BEFORE the app scripts run, then drives the app
+   through window.CCC_TEST (a side-effect-free hook in app.js).
+   ============================================================ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { JSDOM, VirtualConsole } from 'jsdom';
+
+const root   = new URL('../', import.meta.url);
+const read   = f => fs.readFileSync(new URL(f, root), 'utf8');
+const dataJs = read('data.js');
+const appJs  = read('app.js');
+// strip the external <script> tags so jsdom doesn't try to fetch them;
+// we eval data.js + app.js manually after seeding localStorage.
+const htmlRaw = read('index.html').replace(/<script[^>]*><\/script>/g, '');
+
+function boot(seed){
+  // swallow jsdom's "Not implemented: window.scrollTo" noise, keep real errors
+  const vc = new VirtualConsole();
+  vc.on('jsdomError', e => { if(!/Not implemented/.test(e.message)) console.error(e); });
+  const dom = new JSDOM(htmlRaw, { url: 'https://example.org/', runScripts: 'dangerously', virtualConsole: vc });
+  const { window } = dom;
+  if(seed !== undefined){
+    window.localStorage.setItem('ccc2031.v1', typeof seed === 'string' ? seed : JSON.stringify(seed));
+  }
+  // inject data.js then app.js as inline scripts so they run in window scope
+  // (with `window` defined) AFTER localStorage has been seeded.
+  const inject = code => {
+    const s = window.document.createElement('script');
+    s.textContent = code;
+    window.document.body.appendChild(s);
+  };
+  inject(dataJs);
+  inject(appJs);
+  return window;
+}
+
+test('fresh boot renders all four tabs without errors', () => {
+  const w = boot();
+  const T = w.CCC_TEST;
+  for(const tab of ['today', 'week', 'log', 'settings', 'today']){
+    assert.doesNotThrow(() => T.go(tab), `go(${tab}) should not throw`);
+    assert.ok(w.document.querySelector('#main').innerHTML.length > 0, `tab ${tab} rendered content`);
+  }
+});
+
+test('v1 → v2 migration preserves existing log entries and adds new fields', () => {
+  const v1 = {
+    version: 1,
+    log: { '2026-06-01': { type: 'long', done: true, items: {}, note: 'hi', distanceKm: 30 } },
+    settings: { baseLongKm: 20, weeklyTargetKm: 0, raceDate: '2031-08-29',
+      raceName: 'UTMB CCC', reminderTime: '06:30', lang: 'jp', podcast: {} }
+  };
+  const w = boot(v1);
+  const st = w.CCC_TEST.getState();
+  assert.equal(st.version, 2, 'version bumped to 2');
+  assert.ok(st.log['2026-06-01'], 'log entry preserved');
+  assert.equal(st.log['2026-06-01'].distanceKm, 30, 'distance preserved');
+  assert.equal(st.log['2026-06-01'].note, 'hi', 'note preserved');
+  assert.equal(st.settings.lang, 'jp', 'existing setting preserved');
+  assert.ok(Array.isArray(st.settings.races) && st.settings.races.length === 3, 'races seeded');
+  assert.equal(typeof st.settings.cycleStartDate, 'string', 'cycleStartDate set');
+  assert.equal(st.settings.lastExportAt, null, 'lastExportAt defaults to null');
+  const persisted = JSON.parse(w.localStorage.getItem('ccc2031.v1'));
+  assert.equal(persisted.version, 2, 'migration persisted to localStorage');
+});
+
+test('ACWR computes the expected ratio (1.3) on seeded data', () => {
+  const seed = { version: 2, log: {
+    '2026-06-10': { type: 'quality', done: true, items: {}, note: '', distanceKm: 52 }, // acute (today)
+    '2026-06-03': { type: 'quality', done: true, items: {}, note: '', distanceKm: 40 }, // prev week -1
+    '2026-05-27': { type: 'quality', done: true, items: {}, note: '', distanceKm: 40 }  // prev week -2
+  }, settings: {} };
+  const w = boot(seed);
+  const a = w.CCC_TEST.acwr('2026-06-10');
+  assert.equal(a.insufficient, undefined, 'enough data');
+  assert.equal(a.acute, 52, 'acute = trailing 7 days');
+  assert.equal(a.chronic, 40, 'chronic = avg of 2 prior weeks with km');
+  assert.equal(a.ratio, 1.3, 'ratio = 52 / 40');
+});
+
+test('ACWR reports insufficient data with fewer than 2 prior weeks', () => {
+  const seed = { version: 2, log: {
+    '2026-06-10': { type: 'quality', done: true, items: {}, note: '', distanceKm: 52 },
+    '2026-06-03': { type: 'quality', done: true, items: {}, note: '', distanceKm: 40 } // only 1 prior week
+  }, settings: {} };
+  const w = boot(seed);
+  assert.equal(w.CCC_TEST.acwr('2026-06-10').insufficient, true);
+});
+
+test('recovery-week detection for a known cycleStartDate (3-up / 1-down)', () => {
+  const seed = { version: 2, log: {}, settings: { cycleStartDate: '2026-06-08', cycleEnabled: true } };
+  const T = boot(seed).CCC_TEST;
+  assert.equal(T.recoveryWeekIndex('2026-06-08'), 0);
+  assert.equal(T.recoveryWeekIndex('2026-06-15'), 1);
+  assert.equal(T.recoveryWeekIndex('2026-06-22'), 2);
+  assert.equal(T.recoveryWeekIndex('2026-06-29'), 3, 'index 3 = recovery week');
+  assert.equal(T.isRecoveryWeek('2026-06-29'), true);
+  assert.equal(T.isRecoveryWeek('2026-06-08'), false);
+});
+
+test('weekly D+ sums elevM across the Mon–Sun week', () => {
+  const seed = { version: 2, log: {
+    '2026-06-08': { type: 'strengthA', done: false, items: {}, note: '', elevM: 300 },
+    '2026-06-10': { type: 'quality', done: true, items: {}, note: '', distanceKm: 12, elevM: 500 },
+    '2026-06-12': { type: 'long', done: false, items: {}, note: '', distanceKm: 20, elevM: 200 }
+  }, settings: {} };
+  const T = boot(seed).CCC_TEST;
+  assert.equal(T.weekElev(T.pdate('2026-06-08')), 1000);
+});
+
+test('completing a session shows the knee prompt once and saves a score (≤2 taps)', () => {
+  const w = boot();
+  const T = w.CCC_TEST;
+  const doc = w.document;
+  // a Wednesday is always a quality-run day (plan[3]) → has a complete button
+  const mon = T.mondayOf(T.pdate(T.dstr()));
+  const wed = T.dstr(T.addDays(mon, 2));
+  T.selDate(wed);
+  T.renderToday();
+  const cb = doc.querySelector('#completeBtn');
+  assert.ok(cb, 'complete button present on a run day');
+  cb.click();                                   // tap 1 — completes
+  assert.ok(doc.querySelector('.kneecard'), 'knee card appears after completion');
+  assert.equal(T.getState().log[wed].done, true, 'completion not blocked');
+  const b3 = doc.querySelector('.kneescale .kbtn[data-knee="3"]');
+  assert.ok(b3, 'knee scale rendered');
+  b3.click();                                   // tap 2 — saves score
+  assert.equal(T.getState().log[wed].knee, 3, 'knee score saved');
+  assert.equal(doc.querySelector('.kneecard'), null, 'knee card dismissed after saving');
+});
+
+test('phase + next-race logic relative to the next upcoming race', () => {
+  const seed = { version: 2, log: {}, settings: { races: [
+    { name: 'Far Race', date: '2026-12-01', note: '' },
+    { name: 'Soon Race', date: '2026-07-01', note: 'A' }
+  ] } };
+  const T = boot(seed).CCC_TEST;
+  // from 2026-06-10 the nearest upcoming race is Soon Race (3 weeks out → Build)
+  assert.equal(T.nextRace('2026-06-10').name, 'Soon Race');
+  assert.equal(T.phaseFor('2026-06-10').key, 'build');
+  // 1 week out → Taper; race week → Race
+  assert.equal(T.phaseFor('2026-06-24').key, 'taper');
+  assert.equal(T.phaseFor('2026-06-29').key, 'race');
+  // both taper and race week suppress the +10% long-run target
+  assert.equal(T.longTargetFor('2026-06-24').mode, 'taper');
+  assert.equal(T.longTargetFor('2026-06-24').km, null);
+  assert.equal(T.longTargetFor('2026-06-29').km, null);
+});

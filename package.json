@@ -1,0 +1,13 @@
+{
+  "name": "ccc2031-training",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Dev/test tooling for the CCC 2031 Training PWA. The shipped app (index.html, app.js, data.js, sw.js) stays dependency-free; jsdom is a devDependency used only by the smoke tests.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.mjs\""
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}

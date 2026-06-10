@@ -5,7 +5,7 @@
   "description": "Dev/test tooling for the CCC 2031 Training PWA. The shipped app (index.html, app.js, data.js, sw.js) stays dependency-free; jsdom is a devDependency used only by the smoke tests.",
   "type": "module",
   "scripts": {
-    "test": "node --test \"tests/*.mjs\""
+    "test": "node --test tests/smoke.mjs"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"

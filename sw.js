@@ -1,5 +1,5 @@
-/* CCC 2031 — service worker (offline shell cache) */
-const CACHE = "ccc2031-v3";
+/* CCC 2031 — service worker (offline shell cache + morning Web Push) */
+const CACHE = "ccc2031-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -29,6 +29,33 @@ self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
+  );
+});
+
+/* Morning Web Push, sent by the das-daily-brief GitHub Action after it
+   publishes the day's encrypted brief. Payload: {title, body, url}. */
+self.addEventListener("push", e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; }
+  catch (err) { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Daily Brief 🎧", {
+    body: d.body || "今朝のブリーフが届きました",
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    data: { url: d.url || "./index.html#brief" }
+  }));
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "./index.html#brief";
+  e.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if ("focus" in c) { c.postMessage({ type: "OPEN_BRIEF" }); return c.focus(); }
+      }
+      return clients.openWindow(url);
+    })
   );
 });
 

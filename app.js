@@ -30,6 +30,7 @@
       baseLongKm:20, weeklyTargetKm:0,
       raceDate:D.raceDate, raceName:D.raceName.jp,
       reminderTime:"06:30", lang:"both", podcast:{},
+      briefKey:"",                                 // AES key for the ブリーフ tab (paired with the daily-brief repo)
       // v2 — training-load guardrails, milestone races, maintenance
       cycleStartDate: dstr(mondayOf(new Date())),  // recovery-cycle anchor (Mon)
       cycleEnabled: true,                          // 3-up / 1-down recovery cycle
@@ -665,6 +666,135 @@
   }
   function showSheet(on){ $("#sheet").classList.toggle("show",on); $("#sheetBg").classList.toggle("show",on); }
 
+  /* ---------------- BRIEF TAB (daily newsletter + podcast) ----------------
+     Fetches brief.enc — an AES-256-GCM-encrypted bundle the das-daily-brief
+     pipeline publishes to its (public) GitHub Pages every morning — decrypts
+     it locally with the key from Settings, and renders the research brief,
+     the Nature digest, and a player for the podcast episode. The last good
+     bundle is cached in localStorage so it stays readable offline mid-run. */
+  const BRIEF = D.brief || {};
+  const BRIEF_CACHE_KEY = "ccc2031.brief.cache";
+  const PUSH_SUB_KEY = "ccc2031.push.sub";
+  let briefCache = null;
+  try{ briefCache = JSON.parse(localStorage.getItem(BRIEF_CACHE_KEY)); }catch(e){}
+  let briefLoading = false;
+
+  function b64uToBytes(s){
+    s = String(s||"").trim().replace(/-/g,"+").replace(/_/g,"/");
+    while(s.length % 4) s += "=";
+    const bin = atob(s);
+    return Uint8Array.from(bin, c=>c.charCodeAt(0));
+  }
+  // Wire format (must match src/publish_brief.py): base64url(12-byte nonce ‖ ciphertext)
+  async function decryptBrief(blobText, keyB64){
+    const raw = b64uToBytes(blobText);
+    const key = await crypto.subtle.importKey("raw", b64uToBytes(keyB64), "AES-GCM", false, ["decrypt"]);
+    const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:raw.slice(0,12)}, key, raw.slice(12));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  // The bundle is self-produced, but strip anything active before injecting.
+  function safeBriefHTML(html){
+    const t = document.createElement("template");
+    t.innerHTML = String(html||"");
+    t.content.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach(n=>n.remove());
+    t.content.querySelectorAll("*").forEach(n=>{
+      [...n.attributes].forEach(a=>{
+        if(/^on/i.test(a.name) || (/^(href|src)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+      });
+      if(n.tagName === "A"){ n.setAttribute("target","_blank"); n.setAttribute("rel","noopener"); }
+    });
+    return t.innerHTML;
+  }
+
+  async function fetchBrief(){
+    const res = await fetch(`${BRIEF.baseUrl}/brief.enc`, {cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const bundle = await decryptBrief(await res.text(), S().briefKey);
+    briefCache = { fetchedAt: new Date().toISOString(), bundle };
+    try{ localStorage.setItem(BRIEF_CACHE_KEY, JSON.stringify(briefCache)); }catch(e){}
+    return bundle;
+  }
+  async function refreshBrief(){
+    if(briefLoading) return; briefLoading = true;
+    try{
+      await fetchBrief();
+      if(tab === "brief") paintBrief();
+    }catch(err){
+      // Wrong key gives an OperationError from decrypt; anything else is network.
+      const wrongKey = err && /Operation|decrypt/i.test(String(err.name || err));
+      if(tab === "brief") paintBrief(wrongKey ? "復号に失敗 — キーを確認してください / wrong key?" : "取得できませんでした（オフライン？）");
+    }finally{ briefLoading = false; }
+  }
+
+  function bindBriefAudio(bundle){
+    const a = $("#briefAudio");
+    if(!a || !bundle || !bundle.podcast) return;
+    a.onplay = () => {
+      if(!("mediaSession" in navigator)) return;
+      try{
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: bundle.podcast.title || "Daily Brief",
+          artist: "Daily Research Brief",
+          artwork: [{ src: "./icon-512.png", sizes: "512x512", type: "image/png" }]
+        });
+        navigator.mediaSession.setActionHandler("seekbackward", ()=>{ a.currentTime = Math.max(0, a.currentTime - 15); });
+        navigator.mediaSession.setActionHandler("seekforward",  ()=>{ a.currentTime = Math.min(a.duration || a.currentTime + 30, a.currentTime + 30); });
+      }catch(e){}
+    };
+  }
+
+  function paintBrief(msg){
+    const b = briefCache && briefCache.bundle;
+    const stale = b && b.date !== dstr();
+    let body;
+    if(!b){
+      body = `<div class="empty"><div class="big">📡</div>${msg ? esc(msg) : "ブリーフを取得しています…"}<br><span style="color:var(--faint)">${msg ? "Could not load — pull ↻ to retry." : "Fetching today's brief…"}</span></div>`;
+    } else {
+      const p = b.podcast;
+      body = `
+        ${msg ? `<div class="hint"><div class="ht">⚠️ 取得エラー / Fetch problem</div><p>${esc(msg)}<br><span style="color:var(--faint)">Showing the saved ${esc(b.date)} edition.</span></p></div>` : ""}
+        ${(stale && !msg) ? `<p class="note" style="margin:0 2px 10px">表示中: ${esc(b.date)} 版 <span style="color:var(--faint)">(latest available)</span></p>` : ""}
+        ${p ? `<div class="card">
+          <div class="label" style="margin:0 0 9px">🎧 ポッドキャスト · Podcast</div>
+          <div style="font-weight:600;font-size:14px;margin-bottom:9px">${esc(p.title)}</div>
+          <audio id="briefAudio" controls preload="none" style="width:100%" src="${esc(p.audio_url)}"></audio>
+          ${p.description ? `<p class="note" style="margin:9px 0 0">${esc(p.description)}</p>` : ""}
+        </div>` : ""}
+        <div class="card">
+          <div class="label" style="margin:0 0 9px">📑 リサーチブリーフ · Research Brief</div>
+          <div class="brief-body">${safeBriefHTML(b.research && b.research.html)}</div>
+        </div>
+        ${b.nature ? `<div class="card">
+          <div class="label" style="margin:0 0 9px">🔬 Nature ダイジェスト · Nature Daily Brief</div>
+          <div class="brief-body">${safeBriefHTML(b.nature.html)}</div>
+        </div>` : `<p class="note">今日の Nature ダイジェストはありません。<span style="color:var(--faint)">No Nature digest today.</span></p>`}`;
+    }
+    main().innerHTML = `<div class="view">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:2px 2px 12px">
+        <div class="label" style="margin:0">デイリーブリーフ${b ? ` · ${esc(b.date)}` : ""}</div>
+        <button class="btn btn-sm" id="bRefresh" style="margin:0">↻ 更新</button>
+      </div>
+      ${body}
+    </div>`;
+    $("#bRefresh").onclick = ()=>{ toast("更新中…", false); refreshBrief(); };
+    bindBriefAudio(b);
+  }
+
+  function renderBrief(){
+    if(!S().briefKey){
+      main().innerHTML = `<div class="view"><div class="hint">
+        <div class="ht">🔑 復号キーが必要です / Key required</div>
+        <p>ブリーフは暗号化して配信されています。設定タブで復号キーを一度だけ貼り付けてください。<br>
+        <span style="color:var(--faint)">The daily brief is encrypted. Paste the decryption key once in Settings.</span></p>
+        <button class="btn btn-sm" id="bGoSet" style="width:100%;margin-top:10px">設定へ / Open Settings</button>
+      </div></div>`;
+      $("#bGoSet").onclick = ()=>go("settings");
+      return;
+    }
+    paintBrief();      // cached edition (or fetching state) immediately …
+    refreshBrief();    // … then repaint when the network answers
+  }
+
   /* ---------------- SETTINGS ---------------- */
   const SEG_ON = "background:var(--blaze);border-color:var(--blaze);color:#16100b";
 
@@ -743,12 +873,14 @@
         <input class="input mono" type="date" id="sCycle" value="${s.cycleStartDate}"></div>
       <p class="note">これらは助言のみで、入力をブロックしません。<span style="color:var(--faint)">Advisory only — never blocks logging.</span></p>
 
-      <div class="label">リマインダー · Reminder</div>
-      <div class="set"><label>通知したい時刻 / Time</label><input class="input mono" type="time" id="sTime" value="${s.reminderTime}"></div>
-      <button class="btn btn-sm" id="sNotif" style="width:100%;margin-top:0">通知を有効化 / Enable notifications</button>
+      <div class="label">デイリーブリーフ · Daily Brief</div>
+      <div class="set"><label>復号キー / Decryption key</label>
+        <input class="input mono" id="sBriefKey" value="${esc(s.briefKey||'')}" placeholder="BRIEF_ENC_KEY を貼り付け / paste key" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+      <button class="btn btn-sm" id="sNotif" style="width:100%;margin-top:0">朝のプッシュ通知を有効化 / Enable morning push</button>
+      ${pushSubHTML()}
       <div class="hint" style="margin-top:10px">
-        <div class="ht">⏰ 定時通知について</div>
-        <p>iOSのホーム画面アプリは「毎朝◯時」のような<b>予約通知をアプリ単体では送れません</b>。確実に毎朝鳴らすには、iPhoneの<b>ショートカット</b>アプリで「オートメーション → 時刻 → ${s.reminderTime} → このアプリを開く / 通知」を設定するのが一番安定します。練習予定の通知は、今お使いの<b>Googleカレンダー</b>のイベント通知でもカバーできます。</p>
+        <div class="ht">🎧 ブリーフ連携について</div>
+        <p>復号キーを入れると「ブリーフ」タブに毎朝のニュースレター（リサーチブリーフ + Nature ダイジェスト）とポッドキャストが表示されます。プッシュ通知は ① このアプリを<b>ホーム画面に追加</b>（iOS 16.4+ / Android Chrome）→ ② 上のボタンで許可 → ③ 表示されるJSONを das-daily-brief リポジトリの Secret <b>PUSH_SUBSCRIPTIONS</b> に登録、で毎朝 7:45 頃に届きます。<br><span style="color:var(--faint)">Paste the key to unlock the Brief tab. For the morning push: install to Home Screen, enable above, then put the JSON into the PUSH_SUBSCRIPTIONS secret of das-daily-brief.</span></p>
       </div>
 
       <div class="label">表示言語 · Language</div>
@@ -791,7 +923,11 @@
     // backup reminder banner
     const bx=$("#bkExport"); if(bx) bx.onclick=()=>{ exportData(); renderSettings(); };
     const bs=$("#bkSnooze"); if(bs) bs.onclick=()=>{ s.exportSnoozedUntil=dstr(addDays(pdate(dstr()),7)); save(); renderSettings(); };
-    $("#sTime").onchange=e=>{ s.reminderTime=e.target.value; save(); };
+    const bk=$("#sBriefKey"); if(bk) bk.oninput=e=>{ s.briefKey=e.target.value.trim(); save(); };
+    const scp=$("#sSubCopy"); if(scp) scp.onclick=async()=>{
+      try{ await navigator.clipboard.writeText(localStorage.getItem(PUSH_SUB_KEY)||""); toast("コピーしました — Secretに貼り付けてください"); }
+      catch(e){ toast("コピー失敗 — 長押しで選択してください", false); }
+    };
     $("#sNotif").onclick=enableNotif;
     main().querySelectorAll("[data-lang]").forEach(b=> b.onclick=()=>{ s.lang=b.dataset.lang; save(); renderSettings(); });
     main().querySelectorAll("[data-pod]").forEach(inp=> inp.oninput=()=>{ s.podcast[inp.dataset.pod]=inp.value; save(); });
@@ -801,12 +937,40 @@
     $("#sReset").onclick=()=>{ if(confirm("すべての記録と設定を消去します。よろしいですか？")){ state=defaults(); save(); selDate=dstr(); toast("リセットしました"); go("today"); } };
   }
 
+  function pushSubHTML(){
+    let sub = null; try{ sub = localStorage.getItem(PUSH_SUB_KEY); }catch(e){}
+    if(!sub) return "";
+    return `<div class="set" style="margin-top:10px"><label>購読JSON（Secretに登録する値） / Push subscription</label>
+      <textarea class="input mono" id="sSubJson" readonly rows="4" style="font-size:10.5px">${esc(sub)}</textarea></div>
+      <button class="btn btn-sm" id="sSubCopy" style="width:100%;margin-top:0">📋 JSONをコピー / Copy JSON</button>`;
+  }
+  /* Web Push registration. The subscription JSON is device-specific and must
+     be pasted once into the das-daily-brief repo's PUSH_SUBSCRIPTIONS secret
+     (there is deliberately no backend to receive it automatically). Falls
+     back to a plain local test notification where push is unsupported. */
+  async function subscribePush(){
+    try{
+      if(!("serviceWorker" in navigator) || !("PushManager" in window) || !BRIEF.vapidPublicKey) return null;
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: b64uToBytes(BRIEF.vapidPublicKey)
+      });
+      localStorage.setItem(PUSH_SUB_KEY, JSON.stringify(sub.toJSON ? sub.toJSON() : sub));
+      return sub;
+    }catch(e){ return null; }
+  }
   async function enableNotif(){
-    if(!("Notification" in window)){ toast("この環境は通知に未対応", false); return; }
+    if(!("Notification" in window)){ toast("この環境は通知に未対応 — ホーム画面に追加してから (iOS 16.4+)", false); return; }
     try{
       const p = await Notification.requestPermission();
-      if(p==="granted"){ toast("通知を許可しました"); try{ new Notification("CCC 2031", {body:"通知の準備ができました ⛰", icon:"icon-192.png"}); }catch(e){} }
-      else toast("通知は許可されませんでした", false);
+      if(p!=="granted"){ toast("通知は許可されませんでした", false); return; }
+      const sub = await subscribePush();
+      if(sub){ toast("プッシュ登録OK — JSONをSecretに登録してください"); renderSettings(); }
+      else{
+        toast("通知を許可しました（この環境はプッシュ未対応）");
+        try{ new Notification("CCC 2031", {body:"通知の準備ができました ⛰", icon:"icon-192.png"}); }catch(e){}
+      }
     }catch(e){ toast("通知の有効化に失敗", false); }
   }
   function exportData(){
@@ -833,6 +997,7 @@
     if(t==="today"){ selDate=dstr(); renderToday(); }
     else if(t==="week") renderWeek();
     else if(t==="log") renderLog();
+    else if(t==="brief") renderBrief();
     else if(t==="settings") renderSettings();
     main().scrollTop=0; window.scrollTo(0,0);
   }
@@ -850,7 +1015,9 @@
   });
 
   paintHeader();
-  go("today");
+  // A morning-push tap opens ./index.html#brief — land straight on that tab.
+  go(location.hash === "#brief" ? "brief" : "today");
+  if(location.hash) try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 
   /* Test hook — pure helpers + a few accessors for the jsdom smoke tests.
      Side-effect-free and harmless in the browser. */
@@ -858,13 +1025,18 @@
     migrate, acwr, chronicWeeklyKm, rolling7Km, weekElev,
     recoveryWeekIndex, isRecoveryWeek, nextRace, phaseFor, longTargetFor,
     ensureLog, go, renderToday, renderWeek, renderLog, renderSettings,
-    dstr, pdate, addDays, mondayOf, KEY,
+    renderBrief, paintBrief, safeBriefHTML, b64uToBytes, decryptBrief,
+    dstr, pdate, addDays, mondayOf, KEY, BRIEF_CACHE_KEY, PUSH_SUB_KEY,
     getState: () => state,
     selDate: ds => { if(ds!==undefined) selDate = ds; return selDate; }
   };
 
   // service worker + update toast
   if("serviceWorker" in navigator){
+    // notification tapped while the app is already open → jump to the brief
+    navigator.serviceWorker.addEventListener("message", e=>{
+      if(e.data && e.data.type === "OPEN_BRIEF") go("brief");
+    });
     let updating = false;   // only reload when the user opts in (no reload loops)
     navigator.serviceWorker.addEventListener("controllerchange", ()=>{
       if(!updating) return; updating=false; window.location.reload();

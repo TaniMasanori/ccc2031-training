@@ -64,6 +64,17 @@ window.CCC_DATA = {
          theme: { jp: "オフ",         en: "Off" } }
   },
 
+  /* Daily-brief integration (ブリーフ tab).
+     baseUrl hosts the das-daily-brief GitHub Pages output: the public podcast
+     audio + brief.enc, an AES-256-GCM-encrypted newsletter bundle. The
+     decryption key is entered once in Settings (never committed here).
+     vapidPublicKey pairs with the VAPID_PRIVATE_KEY secret in the
+     das-daily-brief repo, which sends the morning Web Push. */
+  brief: {
+    baseUrl: "https://tanimasanori.github.io/das-daily-brief",
+    vapidPublicKey: "BNhfmMJZjGIZ7HjhjOpCUtOLEF0rS4LlAYGxhmXvi-hUwGPHM2vTTeWeHR1wp9e0bh7hTBDcRFJJYI4ZzGEyz28"
+  },
+
   /* Default podcast hint per session type (editable in Settings). */
   podcastDefaults: {
     strengthA: { jp: "短め・情報系の回（聴き流しに）", en: "A short, info-style episode" },

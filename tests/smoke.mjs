@@ -18,7 +18,7 @@ const appJs  = read('app.js');
 // we eval data.js + app.js manually after seeding localStorage.
 const htmlRaw = read('index.html').replace(/<script[^>]*><\/script>/g, '');
 
-function boot(seed){
+function boot(seed, extraStorage){
   // swallow jsdom's "Not implemented: window.scrollTo" noise, keep real errors
   const vc = new VirtualConsole();
   vc.on('jsdomError', e => { if(!/Not implemented/.test(e.message)) console.error(e); });
@@ -27,6 +27,13 @@ function boot(seed){
   if(seed !== undefined){
     window.localStorage.setItem('ccc2031.v1', typeof seed === 'string' ? seed : JSON.stringify(seed));
   }
+  for(const [k, v] of Object.entries(extraStorage || {})){
+    window.localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+  }
+  // jsdom has no SubtleCrypto/TextDecoder — lend it Node's so the brief-tab
+  // decrypt path is testable with the app's real code.
+  try{ Object.defineProperty(window, 'crypto', { value: globalThis.crypto, configurable: true }); }catch(e){}
+  if(!window.TextDecoder) window.TextDecoder = TextDecoder;
   // inject data.js then app.js as inline scripts so they run in window scope
   // (with `window` defined) AFTER localStorage has been seeded.
   const inject = code => {
@@ -39,10 +46,10 @@ function boot(seed){
   return window;
 }
 
-test('fresh boot renders all four tabs without errors', () => {
+test('fresh boot renders all five tabs without errors', () => {
   const w = boot();
   const T = w.CCC_TEST;
-  for(const tab of ['today', 'week', 'log', 'settings', 'today']){
+  for(const tab of ['today', 'week', 'log', 'brief', 'settings', 'today']){
     assert.doesNotThrow(() => T.go(tab), `go(${tab}) should not throw`);
     assert.ok(w.document.querySelector('#main').innerHTML.length > 0, `tab ${tab} rendered content`);
   }
@@ -150,4 +157,54 @@ test('phase + next-race logic relative to the next upcoming race', () => {
   assert.equal(T.longTargetFor('2026-06-24').mode, 'taper');
   assert.equal(T.longTargetFor('2026-06-24').km, null);
   assert.equal(T.longTargetFor('2026-06-29').km, null);
+});
+
+/* ---------------- brief tab (daily-brief integration) ---------------- */
+
+test('brief tab without a key shows the key-required hint', () => {
+  const w = boot();
+  w.CCC_TEST.go('brief');
+  const html = w.document.querySelector('#main').innerHTML;
+  assert.ok(html.includes('復号キー'), 'asks for the decryption key');
+  assert.ok(w.document.querySelector('#bGoSet'), 'offers a jump to settings');
+});
+
+test('brief tab renders a cached bundle offline (podcast + both newsletters, sanitized)', () => {
+  const bundle = {
+    v: 1, date: '2026-07-04',
+    research: { title: 'Research Brief', html: '<h2>Papers</h2><p>DAS paper <script>alert(1)</script><a href="https://doi.org/x">link</a></p>' },
+    nature:   { subject: '🔬 Nature Daily Brief — 2026-07-04', html: '<p>nature digest text</p>' },
+    podcast:  { title: 'Brief — 07-04', description: 'focus', audio_url: 'https://pages.example/audio/brief.mp3', published: '2026-07-04T13:50:00Z' }
+  };
+  const w = boot(
+    { version: 2, log: {}, settings: { briefKey: 'dGVzdA' } },
+    { 'ccc2031.brief.cache': { fetchedAt: '2026-07-04T14:00:00Z', bundle } }
+  );
+  w.CCC_TEST.go('brief');   // fetch fails in jsdom → must fall back to the cache
+  const main = w.document.querySelector('#main');
+  const html = main.innerHTML;
+  assert.ok(html.includes('リサーチブリーフ'), 'research section rendered');
+  assert.ok(html.includes('nature digest text'), 'nature section rendered');
+  const audio = main.querySelector('#briefAudio');
+  assert.ok(audio && audio.getAttribute('src') === 'https://pages.example/audio/brief.mp3', 'audio player wired to the episode');
+  assert.ok(!html.includes('alert(1)'), 'script tags stripped from newsletter HTML');
+  const a = main.querySelector('.brief-body a');
+  assert.equal(a.getAttribute('target'), '_blank', 'links open outside the PWA');
+});
+
+test('decryptBrief opens a bundle encrypted by src/publish_brief.py (cross-language vector)', async () => {
+  // Vector generated with the Python encryptor and a throwaway all-zero…31 key;
+  // regenerate via publish_brief.encrypt if the wire format ever changes.
+  const TEST_KEY  = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
+  const TEST_BLOB = 'mmkHBiYUMsR-ma93SdqnOQRZFQA4qAOEtqyiViHZjbP9SFfSrSX0x-d7QcqsApRXBAFSCaDGG-EKHroDMCkConWgDfIsgZHtSXlW5zNSjq4GjuSLD_j6T-wZL5kkvObnXY0kMIHxl35_ZSUKyh5aPv7SpGOtnO2rA4qy2yFSCBHr4mdZWLRW2utwl5Bd3S3FXKT8Y776pZXUSKXu9lL7uUPfxo_J';
+  const w = boot();
+  const bundle = await w.CCC_TEST.decryptBrief(TEST_BLOB, TEST_KEY);
+  assert.equal(bundle.v, 1);
+  assert.equal(bundle.date, '2026-07-04');
+  assert.equal(bundle.research.title, 'Test Brief');
+  assert.ok(bundle.research.html.includes('日本語テスト'), 'UTF-8 survives the round trip');
+  await assert.rejects(
+    () => w.CCC_TEST.decryptBrief(TEST_BLOB, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+    'wrong key must not decrypt'
+  );
 });

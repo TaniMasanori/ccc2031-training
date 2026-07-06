@@ -675,9 +675,11 @@
   const BRIEF = D.brief || {};
   const BRIEF_CACHE_KEY = "ccc2031.brief.cache";
   const PUSH_SUB_KEY = "ccc2031.push.sub";
+  const AUDIO_CACHE = "ccc2031-audio-v1";     // Cache API: decrypted episode, for offline
   let briefCache = null;
   try{ briefCache = JSON.parse(localStorage.getItem(BRIEF_CACHE_KEY)); }catch(e){}
   let briefLoading = false;
+  let audioURL = null;                        // live object URL for the current episode
 
   function b64uToBytes(s){
     s = String(s||"").trim().replace(/-/g,"+").replace(/_/g,"/");
@@ -685,12 +687,42 @@
     const bin = atob(s);
     return Uint8Array.from(bin, c=>c.charCodeAt(0));
   }
-  // Wire format (must match src/publish_brief.py): base64url(12-byte nonce ‖ ciphertext)
-  async function decryptBrief(blobText, keyB64){
-    const raw = b64uToBytes(blobText);
+  // AES-GCM decrypt of raw (12-byte nonce ‖ ciphertext) bytes — matches
+  // src/publish_brief.py for both brief.enc (JSON) and *.mp3.enc (audio).
+  async function decryptBytesRaw(rawU8, keyB64){
     const key = await crypto.subtle.importKey("raw", b64uToBytes(keyB64), "AES-GCM", false, ["decrypt"]);
-    const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:raw.slice(0,12)}, key, raw.slice(12));
+    return crypto.subtle.decrypt({name:"AES-GCM", iv:rawU8.slice(0,12)}, key, rawU8.slice(12));
+  }
+  async function decryptBrief(blobText, keyB64){   // brief.enc is base64url text
+    const pt = await decryptBytesRaw(b64uToBytes(blobText), keyB64);
     return JSON.parse(new TextDecoder().decode(pt));
+  }
+  // Return an object URL for the episode audio: from the offline cache if
+  // present, else fetch the encrypted file, decrypt it, and cache it (pruning
+  // older episodes). Works for plain audio too (audio_encrypted false).
+  async function episodeAudioURL(bundle){
+    const p = bundle.podcast, date = bundle.date;
+    try{
+      const c = await caches.open(AUDIO_CACHE);
+      const hit = await c.match("audio/" + date);
+      if(hit) return URL.createObjectURL(await hit.blob());
+    }catch(e){}
+    const bust = (p.audio_url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(date);
+    const res = await fetch(p.audio_url + bust, {cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    let blob;
+    if(p.audio_encrypted){
+      const mp3 = await decryptBytesRaw(new Uint8Array(await res.arrayBuffer()), S().briefKey);
+      blob = new Blob([mp3], {type:"audio/mpeg"});
+    }else{
+      blob = await res.blob();
+    }
+    try{
+      const c = await caches.open(AUDIO_CACHE);
+      for(const k of await c.keys()){ if(!k.url.endsWith("/audio/" + date)) await c.delete(k); }
+      await c.put("audio/" + date, new Response(blob));
+    }catch(e){}
+    return URL.createObjectURL(blob);
   }
   // The bundle is self-produced, but strip anything active before injecting.
   function safeBriefHTML(html){
@@ -707,7 +739,11 @@
   }
 
   async function fetchBrief(){
-    const res = await fetch(`${BRIEF.baseUrl}/brief.enc`, {cache:"no-store"});
+    // Cache-bust with a timestamp: {cache:"no-store"} only bypasses the browser
+    // cache, not GitHub Pages' CDN edge — without this the app could keep
+    // reading a stale bundle (e.g. showing no Nature digest after one appeared).
+    const bust = "?v=" + Date.now();
+    const res = await fetch(`${BRIEF.baseUrl}/brief.enc${bust}`, {cache:"no-store"});
     if(!res.ok) throw new Error("HTTP " + res.status);
     const bundle = await decryptBrief(await res.text(), S().briefKey);
     briefCache = { fetchedAt: new Date().toISOString(), bundle };
@@ -726,20 +762,39 @@
     }finally{ briefLoading = false; }
   }
 
+  function wireMediaSession(a, bundle){
+    if(!("mediaSession" in navigator)) return;
+    try{
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: (bundle.podcast && bundle.podcast.title) || "Daily Brief",
+        artist: "Daily Research Brief",
+        artwork: [{ src: "./icon-512.png", sizes: "512x512", type: "image/png" }]
+      });
+      navigator.mediaSession.setActionHandler("seekbackward", ()=>{ a.currentTime = Math.max(0, a.currentTime - 15); });
+      navigator.mediaSession.setActionHandler("seekforward",  ()=>{ a.currentTime = Math.min(a.duration || a.currentTime + 30, a.currentTime + 30); });
+    }catch(e){}
+  }
+  // The episode audio is encrypted, so it can't stream from a plain <audio src>.
+  // A tap downloads + decrypts it (a few MB), then swaps in a real player.
   function bindBriefAudio(bundle){
-    const a = $("#briefAudio");
-    if(!a || !bundle || !bundle.podcast) return;
-    a.onplay = () => {
-      if(!("mediaSession" in navigator)) return;
+    const btn = $("#bAudioLoad");
+    if(!btn || !bundle || !bundle.podcast) return;
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "読み込み中… / Loading…";
       try{
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: bundle.podcast.title || "Daily Brief",
-          artist: "Daily Research Brief",
-          artwork: [{ src: "./icon-512.png", sizes: "512x512", type: "image/png" }]
-        });
-        navigator.mediaSession.setActionHandler("seekbackward", ()=>{ a.currentTime = Math.max(0, a.currentTime - 15); });
-        navigator.mediaSession.setActionHandler("seekforward",  ()=>{ a.currentTime = Math.min(a.duration || a.currentTime + 30, a.currentTime + 30); });
-      }catch(e){}
+        if(audioURL){ URL.revokeObjectURL(audioURL); audioURL = null; }
+        audioURL = await episodeAudioURL(bundle);
+        const slot = $("#briefAudioSlot");
+        if(!slot) return;
+        slot.innerHTML = `<audio id="briefAudio" controls autoplay preload="auto" style="width:100%"></audio>`;
+        const a = $("#briefAudio");
+        a.src = audioURL;
+        a.onplay = () => wireMediaSession(a, bundle);
+        a.play().catch(()=>{});
+      }catch(err){
+        btn.disabled = false; btn.textContent = "▶ 音声を再生 / Play episode";
+        toast("音声を取得できませんでした（オフライン？）", false);
+      }
     };
   }
 
@@ -757,8 +812,12 @@
         ${p ? `<div class="card">
           <div class="label" style="margin:0 0 9px">🎧 ポッドキャスト · Podcast</div>
           <div style="font-weight:600;font-size:14px;margin-bottom:9px">${esc(p.title)}</div>
-          <audio id="briefAudio" controls preload="none" style="width:100%" src="${esc(p.audio_url)}"></audio>
+          <div id="briefAudioSlot"><button class="btn btn-sm" id="bAudioLoad" style="width:100%">▶ 音声を再生 / Play episode</button></div>
           ${p.description ? `<p class="note" style="margin:9px 0 0">${esc(p.description)}</p>` : ""}
+        </div>` : ""}
+        ${b.worklog ? `<div class="card">
+          <div class="label" style="margin:0 0 9px">🗒 最近の作業 · Recent work${b.worklog.dates && b.worklog.dates.length ? ` <span style="color:var(--faint)">(${esc(b.worklog.dates.join(", "))})</span>` : ""}</div>
+          <div class="brief-body">${safeBriefHTML(b.worklog.html)}</div>
         </div>` : ""}
         <div class="card">
           <div class="label" style="margin:0 0 9px">📑 リサーチブリーフ · Research Brief</div>

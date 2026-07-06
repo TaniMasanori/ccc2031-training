@@ -169,12 +169,13 @@ test('brief tab without a key shows the key-required hint', () => {
   assert.ok(w.document.querySelector('#bGoSet'), 'offers a jump to settings');
 });
 
-test('brief tab renders a cached bundle offline (podcast + both newsletters, sanitized)', () => {
+test('brief tab renders a cached bundle offline (podcast, worklog, both newsletters, sanitized)', () => {
   const bundle = {
-    v: 1, date: '2026-07-04',
+    v: 2, date: '2026-07-04',
     research: { title: 'Research Brief', html: '<h2>Papers</h2><p>DAS paper <script>alert(1)</script><a href="https://doi.org/x">link</a></p>' },
     nature:   { subject: '🔬 Nature Daily Brief — 2026-07-04', html: '<p>nature digest text</p>' },
-    podcast:  { title: 'Brief — 07-04', description: 'focus', audio_url: 'https://pages.example/audio/brief.mp3', published: '2026-07-04T13:50:00Z' }
+    worklog:  { html: '<h3>DASGeo</h3><ul><li>pretrain collapse fixed</li></ul>', spoken: '…', dates: ['2026-07-03'] },
+    podcast:  { title: 'Brief — 07-04', description: 'focus', audio_url: 'https://pages.example/audio/brief.mp3.enc', audio_encrypted: true, published: '2026-07-04T13:50:00Z' }
   };
   const w = boot(
     { version: 2, log: {}, settings: { briefKey: 'dGVzdA' } },
@@ -185,8 +186,10 @@ test('brief tab renders a cached bundle offline (podcast + both newsletters, san
   const html = main.innerHTML;
   assert.ok(html.includes('リサーチブリーフ'), 'research section rendered');
   assert.ok(html.includes('nature digest text'), 'nature section rendered');
-  const audio = main.querySelector('#briefAudio');
-  assert.ok(audio && audio.getAttribute('src') === 'https://pages.example/audio/brief.mp3', 'audio player wired to the episode');
+  assert.ok(html.includes('最近の作業') && html.includes('pretrain collapse fixed'), 'worklog section rendered');
+  // encrypted audio is behind a load button, not a plain <audio src>
+  assert.ok(main.querySelector('#bAudioLoad'), 'audio load button present');
+  assert.ok(!main.querySelector('#briefAudio'), 'no plain audio element until loaded');
   assert.ok(!html.includes('alert(1)'), 'script tags stripped from newsletter HTML');
   const a = main.querySelector('.brief-body a');
   assert.equal(a.getAttribute('target'), '_blank', 'links open outside the PWA');

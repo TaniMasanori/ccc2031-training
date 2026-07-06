@@ -1,5 +1,6 @@
 /* CCC 2031 — service worker (offline shell cache + morning Web Push) */
-const CACHE = "ccc2031-v4";
+const CACHE = "ccc2031-v5";
+const KEEP_CACHES = [CACHE, "ccc2031-audio-v1"];  // audio cache holds the decrypted episode
 const ASSETS = [
   "./",
   "./index.html",
@@ -27,7 +28,7 @@ self.addEventListener("message", e => {
 
 self.addEventListener("activate", e => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys().then(keys => Promise.all(keys.filter(k => !KEEP_CACHES.includes(k)).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

@@ -24,11 +24,15 @@ A trail-training menu / completion tracker / weekly progress PWA on the road to 
 
 ## デイリーブリーフ連携 / Daily-brief integration
 「ブリーフ」タブに、[das-daily-brief](https://github.com/TaniMasanori/das-daily-brief) が毎朝生成する
-**ニュースレター（リサーチブリーフ + Nature ダイジェスト）とポッドキャスト**が表示されます。
+**ニュースレター（リサーチブリーフ + Nature ダイジェスト + 最近の作業サマリー）と
+日本語ポッドキャスト**が表示されます。すべてこのアプリ専用（公開RSS配信なし）です。
 
-- ニュースレターは AES-256-GCM で暗号化されて公開 Pages に置かれます（`brief.enc`）。
-  **設定 → 復号キー** に das-daily-brief 側の `BRIEF_ENC_KEY` と同じ値を一度だけ貼り付けてください。
-- 朝のプッシュ通知（毎朝 7:45 頃、Web Push）:
+- ニュースレターも**ポッドキャスト音声も** AES-256-GCM で暗号化されて Pages に置かれ、
+  アプリが端末内で復号します。**設定 → 復号キー** に das-daily-brief 側の `BRIEF_ENC_KEY`
+  と同じ値を一度だけ貼り付けてください（この1つの鍵で本文も音声も復号します）。
+- ポッドキャストは「▶ 音声を再生」をタップすると数MBをDL＋復号して再生します。復号済み音声は
+  Cache API に保持されるので、圏外のトレイル上でもオフライン再生できます。
+- 朝のプッシュ通知（毎朝 6:30 頃、Web Push）:
   1. アプリをホーム画面に追加（iOS 16.4+ / Android Chrome）。
   2. 設定 → **朝のプッシュ通知を有効化**。
   3. 表示される購読JSONをコピーし、das-daily-brief リポジトリの Secret **`PUSH_SUBSCRIPTIONS`**
@@ -37,7 +41,7 @@ A trail-training menu / completion tracker / weekly progress PWA on the road to 
 
 ## メモ / Notes
 - **ヘルス連携 / 自動距離取得**: SafariのPWAからHealthKitは読めません。距離は手入力、**翌週の +10% は自動計算**します。自動取得したい場合は iPhone「ショートカット」でヘルスの距離→このアプリに渡す運用が可能。
-- **ロック画面での音声再生**: iOSのPWAは画面ロックで音声が止まることがあります。ロック画面で聴き続けたい日は、従来どおりポッドキャストアプリのRSS購読も併用してください。
+- **ロック画面での音声再生**: iOSのPWAは画面ロックで音声が止まることがあります（Media Session で操作は出ます）。画面を点けたまま／バックグラウンド直後の再生を想定しています。
 
 ## データ / Data
 記録は端末の localStorage に保存。設定の「書き出し / 読み込み」で JSON バックアップ・移行ができます（2027年の日本移行時のデータ移しにも使えます）。

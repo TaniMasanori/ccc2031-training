@@ -680,6 +680,7 @@
   try{ briefCache = JSON.parse(localStorage.getItem(BRIEF_CACHE_KEY)); }catch(e){}
   let briefLoading = false;
   let audioURL = null;                        // live object URL for the current episode
+  let currentAudioDate = null;                // which episode is loaded in the persistent player
 
   function b64uToBytes(s){
     s = String(s||"").trim().replace(/-/g,"+").replace(/_/g,"/");
@@ -770,27 +771,48 @@
         artist: "Daily Research Brief",
         artwork: [{ src: "./icon-512.png", sizes: "512x512", type: "image/png" }]
       });
+      navigator.mediaSession.setActionHandler("play",  ()=>{ a.play().catch(()=>{}); });
+      navigator.mediaSession.setActionHandler("pause", ()=>{ a.pause(); });
       navigator.mediaSession.setActionHandler("seekbackward", ()=>{ a.currentTime = Math.max(0, a.currentTime - 15); });
       navigator.mediaSession.setActionHandler("seekforward",  ()=>{ a.currentTime = Math.min(a.duration || a.currentTime + 30, a.currentTime + 30); });
     }catch(e){}
   }
+  // Show/hide the persistent mini-player (lives outside #main).
+  function showMini(on){
+    const mp = $("#miniPlayer"); if(!mp) return;
+    mp.classList.toggle("show", on);
+    mp.setAttribute("aria-hidden", on ? "false" : "true");
+    const app = document.getElementById("app"); if(app) app.classList.toggle("mini-on", on);
+  }
+  // Load an episode into the PERSISTENT player. Because that player is outside
+  // #main, tab switches never destroy it — audio keeps playing and the
+  // position is preserved. Re-tapping the same episode just resumes it.
+  async function loadEpisode(bundle){
+    const a = $("#miniAudio");
+    if(!a || !bundle || !bundle.podcast) return;
+    if(currentAudioDate === bundle.date && a.src){   // same episode: resume, keep position
+      showMini(true); a.play().catch(()=>{}); return;
+    }
+    if(audioURL){ URL.revokeObjectURL(audioURL); audioURL = null; }
+    audioURL = await episodeAudioURL(bundle);
+    a.src = audioURL;
+    currentAudioDate = bundle.date;
+    const t = $("#miniTitle"); if(t) t.textContent = "🎧 " + ((bundle.podcast.title) || "Daily Brief");
+    a.onplay = () => wireMediaSession(a, bundle);
+    showMini(true);
+    a.play().catch(()=>{});
+  }
   // The episode audio is encrypted, so it can't stream from a plain <audio src>.
-  // A tap downloads + decrypts it (a few MB), then swaps in a real player.
+  // A tap downloads + decrypts it (a few MB) into the persistent player.
   function bindBriefAudio(bundle){
     const btn = $("#bAudioLoad");
     if(!btn || !bundle || !bundle.podcast) return;
     btn.onclick = async () => {
-      btn.disabled = true; btn.textContent = "読み込み中… / Loading…";
+      const already = currentAudioDate === bundle.date;
+      btn.disabled = true; btn.textContent = already ? "表示中…" : "読み込み中… / Loading…";
       try{
-        if(audioURL){ URL.revokeObjectURL(audioURL); audioURL = null; }
-        audioURL = await episodeAudioURL(bundle);
-        const slot = $("#briefAudioSlot");
-        if(!slot) return;
-        slot.innerHTML = `<audio id="briefAudio" controls autoplay preload="auto" style="width:100%"></audio>`;
-        const a = $("#briefAudio");
-        a.src = audioURL;
-        a.onplay = () => wireMediaSession(a, bundle);
-        a.play().catch(()=>{});
+        await loadEpisode(bundle);
+        btn.disabled = false; btn.textContent = "🎧 プレーヤーを表示 / Show player";
       }catch(err){
         btn.disabled = false; btn.textContent = "▶ 音声を再生 / Play episode";
         toast("音声を取得できませんでした（オフライン？）", false);
@@ -812,7 +834,7 @@
         ${p ? `<div class="card">
           <div class="label" style="margin:0 0 9px">🎧 ポッドキャスト · Podcast</div>
           <div style="font-weight:600;font-size:14px;margin-bottom:9px">${esc(p.title)}</div>
-          <div id="briefAudioSlot"><button class="btn btn-sm" id="bAudioLoad" style="width:100%">▶ 音声を再生 / Play episode</button></div>
+          <div id="briefAudioSlot"><button class="btn btn-sm" id="bAudioLoad" style="width:100%">${currentAudioDate === b.date ? "🎧 プレーヤーを表示 / Show player" : "▶ 音声を再生 / Play episode"}</button></div>
           ${p.description ? `<p class="note" style="margin:9px 0 0">${esc(p.description)}</p>` : ""}
         </div>` : ""}
         ${b.worklog ? `<div class="card">
@@ -1068,6 +1090,10 @@
 
   document.querySelectorAll("nav.tabbar .tab").forEach(el=> el.onclick=()=>go(el.dataset.tab));
   $("#sheetBg").onclick=()=>showSheet(false);
+  // Mini-player close: pause + hide, but keep the episode loaded so "Show
+  // player" on the brief tab resumes from the same position.
+  { const mc = $("#miniClose"); if(mc) mc.onclick = ()=>{ const a=$("#miniAudio"); if(a) a.pause(); showMini(false);
+      if(tab==="brief") paintBrief(); }; }
   // delegated goto from week plan list
   document.addEventListener("click", e=>{
     const g=e.target.closest("[data-goto]"); if(g){ selDate=g.dataset.goto; go("today"); }

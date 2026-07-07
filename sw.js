@@ -1,5 +1,5 @@
 /* CCC 2031 — service worker (offline shell cache + morning Web Push) */
-const CACHE = "ccc2031-v5";
+const CACHE = "ccc2031-v6";
 const KEEP_CACHES = [CACHE, "ccc2031-audio-v1"];  // audio cache holds the decrypted episode
 const ASSETS = [
   "./",

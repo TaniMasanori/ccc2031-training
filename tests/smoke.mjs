@@ -189,10 +189,38 @@ test('brief tab renders a cached bundle offline (podcast, worklog, both newslett
   assert.ok(html.includes('最近の作業') && html.includes('pretrain collapse fixed'), 'worklog section rendered');
   // encrypted audio is behind a load button, not a plain <audio src>
   assert.ok(main.querySelector('#bAudioLoad'), 'audio load button present');
-  assert.ok(!main.querySelector('#briefAudio'), 'no plain audio element until loaded');
+  // the actual player is persistent and lives OUTSIDE #main so tab switches
+  // never destroy it (keeps playing + preserves position)
+  assert.ok(w.document.querySelector('#miniAudio'), 'persistent player exists in the shell');
+  assert.ok(!main.querySelector('#miniAudio'), 'persistent player is NOT inside #main');
   assert.ok(!html.includes('alert(1)'), 'script tags stripped from newsletter HTML');
   const a = main.querySelector('.brief-body a');
   assert.equal(a.getAttribute('target'), '_blank', 'links open outside the PWA');
+});
+
+test('podcast player persists across tab switches (element + position survive re-render)', () => {
+  const bundle = {
+    v: 2, date: '2026-07-04',
+    research: { title: 'R', html: '<p>x</p>' }, nature: null, worklog: null,
+    podcast: { title: 'Brief', description: '', audio_url: 'https://pages.example/audio/b.mp3.enc', audio_encrypted: true, published: '2026-07-04T13:50:00Z' }
+  };
+  const w = boot(
+    { version: 2, log: {}, settings: { briefKey: 'dGVzdA' } },
+    { 'ccc2031.brief.cache': { fetchedAt: '2026-07-04T14:00:00Z', bundle } }
+  );
+  const T = w.CCC_TEST;
+  const player = w.document.querySelector('#miniAudio');
+  assert.ok(player, 'persistent player exists in the shell at boot');
+  // simulate a loaded, mid-playback episode
+  player.setAttribute('src', 'blob:fake-episode');
+  player.setAttribute('data-token', 'original-node');
+  // switch across several tabs and back — #main is fully re-rendered each time
+  for(const tab of ['today', 'week', 'log', 'brief', 'settings', 'brief']){ T.go(tab); }
+  const after = w.document.querySelector('#miniAudio');
+  assert.ok(after, 'player still present after switching tabs');
+  assert.equal(after.getAttribute('data-token'), 'original-node', 'SAME element (not recreated on tab switch)');
+  assert.equal(after.getAttribute('src'), 'blob:fake-episode', 'audio src/position preserved across tab switches');
+  assert.equal(w.document.querySelector('#main').querySelector('#miniAudio'), null, 'player is never inside #main');
 });
 
 test('decryptBrief opens a bundle encrypted by src/publish_brief.py (cross-language vector)', async () => {

@@ -50,6 +50,16 @@
 
   <main id="main"><!-- views render here --></main>
 
+  <!-- Persistent podcast player: lives OUTSIDE #main so switching tabs never
+       destroys it — audio keeps playing and the position is preserved. -->
+  <div id="miniPlayer" class="miniplayer" aria-hidden="true">
+    <div class="mini-row">
+      <div class="mini-title" id="miniTitle">🎧</div>
+      <button class="mini-close" id="miniClose" aria-label="プレーヤーを閉じる">×</button>
+    </div>
+    <audio id="miniAudio" controls preload="auto"></audio>
+  </div>
+
   <nav class="tabbar">
     <div class="tab active" data-tab="today">
       <svg viewBox="0 0 24 24"><path d="M12 3 L4 10 v10 h16 V10 Z"/><path d="M9 20 v-6 h6 v6"/></svg>

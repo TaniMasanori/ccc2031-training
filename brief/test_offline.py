@@ -93,6 +93,7 @@ try:
         nature_digest="TL;DR: a broader science headline.",
         worklog_digest="Yesterday you fixed the pretrain collapse.",
         language="ja",
+        covered_topics=["DAS interferometry basics", "StorSeismic pretraining"],
     )
 finally:
     generate.requests.post = _orig_post
@@ -106,7 +107,20 @@ assert "BROADER SCIENCE HEADLINES" in _captured["body"]["text"], \
 assert "YOUR RECENT WORK" in _captured["body"]["text"], \
     "instructions must reference the work recap segment"
 assert "日本語" in _captured["body"]["text"], "language=ja must inject a Japanese narration directive"
-print("OK podcast: nature + work recap resources, Japanese directive present")
+_txt = _captured["body"]["text"]
+assert "STYLE:" in _txt and "analogies" in _txt, \
+    "instructions must carry the straightforward / no-analogy style directive"
+assert "ALREADY COVERED IN RECENT EPISODES" in _txt and "StorSeismic pretraining" in _txt, \
+    "covered topics must be injected as a do-not-repeat list"
+# and without covered_topics the do-not-repeat block is absent
+generate.requests.post = _fake_post
+try:
+    generate.create_podcast("k", "RESEARCH BODY", [], "focus line", language="ja")
+finally:
+    generate.requests.post = _orig_post
+assert "ALREADY COVERED" not in _captured["body"]["text"], \
+    "no covered topics -> no do-not-repeat block"
+print("OK podcast: nature + work recap resources, Japanese + style directives, no-repeat list")
 
 print("\n=== 5. episode retention (same-day re-run must not delete the new file) ===")
 distribute.EPISODES_JSON = Path("out/episodes.json")
@@ -202,10 +216,30 @@ cfg_ob = config.load()
 picked = obsidian._recent_note_texts(cfg_ob, _dt(2026, 7, 6))
 dates = [d for d, _ in picked]
 assert dates == ["2026-07-05", "2026-07-04"], f"want yesterday+2d, excl today/old/non-daily, got {dates}"
+# notes already recapped in a previous episode are skipped (no cross-day repeats)
+picked = obsidian._recent_note_texts(cfg_ob, _dt(2026, 7, 6), exclude_dates={"2026-07-04"})
+assert [d for d, _ in picked] == ["2026-07-05"], "already-recapped dates must be excluded"
 del os.environ["OBSIDIAN_DIR"], os.environ["OBSIDIAN_LOOKBACK_DAYS"]
 # no vault configured -> feature disabled cleanly
 assert obsidian.summarize_recent_work(config.load(), _dt(2026, 7, 6)) is None
-print("OK obsidian: picks yesterday+lookback, excludes today/old/non-daily; off when unset")
+print("OK obsidian: picks yesterday+lookback, excludes today/old/non-daily/recapped; off when unset")
+
+print("\n=== 8.7. covered.json round-trip (cross-day no-repeat memory) ===")
+_cov_path = Path("out/covered.json")
+if _cov_path.exists():
+    _cov_path.unlink()
+cov = state.load_covered(_cov_path)
+assert cov == {"episodes": [], "worklog_dates": []}, "missing file -> empty state"
+state.save_covered(cov, "2026-07-05", ["Topic A", "  "], ["2026-07-04"], path=_cov_path)
+cov = state.load_covered(_cov_path)
+state.save_covered(cov, "2026-07-06", ["Topic B"], ["2026-07-05"], path=_cov_path)
+cov = state.load_covered(_cov_path)
+assert state.recent_topics(cov) == ["Topic B", "Topic A"], "newest episode's topics first, blanks dropped"
+assert cov["worklog_dates"] == ["2026-07-05", "2026-07-04"], "recapped note dates accumulate"
+state.save_covered(cov, "2026-07-06", ["Topic B2"], [], path=_cov_path)  # same-day re-run replaces
+cov = state.load_covered(_cov_path)
+assert state.recent_topics(cov) == ["Topic B2", "Topic A"], "same-day re-run must replace, not duplicate"
+print("OK covered: round-trip, ordering, same-day replace, recap dates")
 
 print("\n=== 9. push payload guard rails ===")
 assert push.send_pushes("not json", "k", "a@b.c", {"title": "t"}) == 0

@@ -89,7 +89,8 @@ def _is_failed(data) -> bool:
 def create_podcast(api_key: str, brief_text: str, paper_urls: list[str],
                    focus: str, calendar_digest: str = "",
                    email_digest: str = "", nature_digest: str = "",
-                   worklog_digest: str = "", language: str = "en") -> str:
+                   worklog_digest: str = "", language: str = "en",
+                   covered_topics: list[str] | None = None) -> str:
     """Submit a podcast job and return its request id.
 
     When calendar_digest is non-empty it is added as the first resource and the
@@ -103,6 +104,8 @@ def create_podcast(api_key: str, brief_text: str, paper_urls: list[str],
     When email_digest is non-empty it is added as a resource and the host wraps
     up with a short rundown of noteworthy inbox mail after the research.
     language="ja" makes the entire narration Japanese.
+    covered_topics lists topics from recent episodes (state/covered.json) that
+    the hosts must not re-explain, so consecutive mornings don't repeat.
     """
     resources = []
     if calendar_digest.strip():
@@ -126,6 +129,27 @@ def create_podcast(api_key: str, brief_text: str, paper_urls: list[str],
         "Japanese, in a calm, friendly tone suited to listening during a workout. "
         if language == "ja" else ""
     )
+    # The listener is an active researcher in this field: keep the delivery
+    # direct and technical. Without this, AutoContent's hosts default to a
+    # chatty NotebookLM register full of analogies and re-explained basics.
+    style_directive = (
+        "STYLE: Be straightforward and information-dense. For each item state "
+        "plainly what it is, what is new, and why it matters to the listener's "
+        "research — nothing more. Do NOT use analogies, metaphors, or cute "
+        "comparisons; the listener is an active researcher and wants direct "
+        "technical language. Do not re-explain basic concepts of the field, do "
+        "not restate the same point in different words, and skip generic filler "
+        "such as sweeping claims about how exciting or game-changing something "
+        "is. Short and specific beats long and colorful. "
+    )
+    no_repeat = ""
+    if covered_topics:
+        no_repeat = (
+            "ALREADY COVERED IN RECENT EPISODES — do not re-introduce or "
+            "re-explain these; mention one only if there is a genuinely new "
+            "development, and then in a single sentence: "
+            + "; ".join(t.strip() for t in covered_topics if t.strip()) + ". "
+        )
     intro = (
         "Open the episode with a brief, friendly rundown of today's schedule "
         "from the TODAY'S SCHEDULE resource, then transition into the research. "
@@ -150,7 +174,8 @@ def create_podcast(api_key: str, brief_text: str, paper_urls: list[str],
         "resource (a few personal/work emails worth knowing about) before signing off. "
         if email_digest.strip() else ""
     )
-    instructions = lang_directive + intro + worklog_segment + nature_segment + outro + focus
+    instructions = (lang_directive + style_directive + no_repeat + intro
+                    + worklog_segment + nature_segment + outro + focus)
     body = {"resources": resources, "text": instructions, "outputType": "audio"}
     r = requests.post(f"{BASE}/Content/Create", headers=_headers(api_key), json=body, timeout=60)
     r.raise_for_status()

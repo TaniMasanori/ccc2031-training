@@ -65,8 +65,14 @@ skip trivial/mechanical edits. Prefer outcomes over file names.
 - Always call submit_worklog_recap."""
 
 
-def _recent_note_texts(cfg: Config, today: datetime) -> list[tuple[str, str]]:
-    """Return [(date_str, text)] for the most recent daily notes before today."""
+def _recent_note_texts(cfg: Config, today: datetime,
+                       exclude_dates: set[str] | None = None) -> list[tuple[str, str]]:
+    """Return [(date_str, text)] for the most recent daily notes before today.
+
+    exclude_dates holds note dates already recapped in a previous episode
+    (state/covered.json), so the same day's work isn't spoken twice when the
+    lookback windows of consecutive mornings overlap.
+    """
     daily_dir = Path(cfg.obsidian_dir) / cfg.obsidian_daily_subdir
     if not daily_dir.is_dir():
         print(f"obsidian: daily-notes dir not found ({daily_dir})")
@@ -82,6 +88,8 @@ def _recent_note_texts(cfg: Config, today: datetime) -> list[tuple[str, str]]:
         # yesterday and back to the lookback window; never include today itself.
         if date_str >= today_str or date_str < cutoff:
             continue
+        if exclude_dates and date_str in exclude_dates:
+            continue
         try:
             text = p.read_text(errors="replace").strip()
         except OSError:
@@ -91,13 +99,19 @@ def _recent_note_texts(cfg: Config, today: datetime) -> list[tuple[str, str]]:
     return picked
 
 
-def summarize_recent_work(cfg: Config, today: datetime) -> dict | None:
-    """Return {"markdown", "spoken"} recap of recent work, or None."""
+def summarize_recent_work(cfg: Config, today: datetime,
+                          exclude_dates: set[str] | None = None) -> dict | None:
+    """Return {"markdown", "spoken"} recap of recent work, or None.
+
+    Notes whose dates are in exclude_dates were already recapped in an earlier
+    episode and are skipped; when nothing new remains, the recap is omitted
+    entirely rather than repeated.
+    """
     if not cfg.obsidian_dir:
         return None
-    notes = _recent_note_texts(cfg, today)
+    notes = _recent_note_texts(cfg, today, exclude_dates)
     if not notes:
-        print("obsidian: no recent daily notes to summarize")
+        print("obsidian: no new daily notes to summarize (already recapped or none recent)")
         return None
 
     joined = "\n\n".join(f"=== {d} ===\n{t}" for d, t in notes)

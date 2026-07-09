@@ -48,6 +48,10 @@ def main() -> None:
     brief["papers"] = fresh_papers
     print(f"after dedup: {len(fresh_papers)} new papers (today + yesterday, not in previous episodes)")
 
+    # Cross-day episode memory: topics recent episodes already explained and
+    # daily-note dates already recapped, so this morning doesn't repeat them.
+    covered = state.load_covered()
+
     # 3.5) Nature Daily Brief digest (best-effort, fetched once): the separate
     # cloud routine now runs at 6am, 30 min before this pipeline, so today's
     # digest is normally ready. Reused below by both the podcast (phase >= 2)
@@ -60,7 +64,8 @@ def main() -> None:
     # Obsidian daily notes (best-effort; None when the vault isn't checked out).
     worklog = None
     if cfg.obsidian_dir and (cfg.phase >= 2 or cfg.brief_enc_key):
-        worklog = obsidian.summarize_recent_work(cfg, today)
+        worklog = obsidian.summarize_recent_work(
+            cfg, today, exclude_dates=set(covered.get("worklog_dates", [])))
         if worklog:
             print(f"worklog recap: summarized {len(worklog.get('dates', []))} recent daily note(s)")
 
@@ -93,6 +98,7 @@ def main() -> None:
                 nature_digest=cfg.redact(nature_digest["text"]) if nature_digest else "",
                 worklog_digest=worklog["spoken"] if worklog else "",
                 language=cfg.podcast_language,
+                covered_topics=[cfg.redact(t) for t in state.recent_topics(covered)],
             )
             audio_url = generate.wait_for_audio(cfg.autocontent_api_key, req_id)
             mp3_path = distribute.AUDIO_DIR / f"brief-{stamp}.mp3"
@@ -165,8 +171,15 @@ def main() -> None:
     #    seen once they've actually been delivered — for phase 2 that means the
     #    episode published, so a failed audio step retries them in the next run
     #    (within the 2-day email window) instead of dropping them silently.
+    #    covered.json follows the same rule: an undelivered episode's topics and
+    #    recap dates stay eligible for the next run.
     if delivered:
         state.save_seen(seen | new_keys)
+        state.save_covered(
+            covered, today.strftime("%Y-%m-%d"),
+            [p.get("title", "") for p in fresh_papers],
+            worklog.get("dates", []) if worklog else [],
+        )
         print("done")
     else:
         print("podcast not published; papers kept for the next episode")

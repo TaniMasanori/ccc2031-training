@@ -157,6 +157,9 @@ cron は 12:30 UTC（≒朝6:30 MDT）。Nature ルーチン（12:00 UTC）の**
 ## カスタマイズ
 
 - **関連性の精度** … `profile.md` を編集。研究の重点・HIGH/MEDIUM/LOWの基準を具体化するほど精度が上がります。
+- **ポッドキャストの語り口** … `src/generate.py` の `style_directive`。既定は「率直・比喩なし・基礎の再説明なし」。
+  日をまたぐ重複は `state/covered.json`（直近エピソードのトピック + 作業サマリー済みノート日付）で抑制され、
+  扱ったトピックの再説明と、同じ日次ノートの二重サマリーを避けます。
 - **LLMの質とコスト** … `ANTHROPIC_MODEL`。日次なら Haiku で十分、質を上げたいなら Sonnet。
 - **スライド枚数** … `src/curate.py` の `slide_outline` の `minItems/maxItems`(既定6 + 表紙 = 7枚)。
 - **配信頻度/コスト抑制** … cron を週次にする、または「新着論文がある日だけ起動」する分岐を `main.py` に追加。

@@ -54,3 +54,57 @@ def filter_new(papers: list[dict], seen: set[str]) -> tuple[list[dict], set[str]
             fresh.append(p)
             keys.add(k)
     return fresh, keys
+
+
+# --- Cross-day episode memory (avoid repeating content over days) -----------
+# seen.json stops the SAME paper being briefed twice; covered.json additionally
+# remembers what recent episodes talked about (topics) and which daily-note
+# dates the work recap already covered, so consecutive mornings don't repeat.
+
+COVERED_PATH = Path("state/covered.json")
+
+
+def load_covered(path: Path = COVERED_PATH) -> dict:
+    """Return {"episodes": [{"date", "topics"}...], "worklog_dates": [...]}."""
+    if not path.exists():
+        return {"episodes": [], "worklog_dates": []}
+    try:
+        data = json.loads(path.read_text())
+        return {
+            "episodes": data.get("episodes", []),
+            "worklog_dates": data.get("worklog_dates", []),
+        }
+    except (json.JSONDecodeError, OSError):
+        return {"episodes": [], "worklog_dates": []}
+
+
+def recent_topics(covered: dict, days: int = 4) -> list[str]:
+    """Topics from the most recent `days` episodes, newest first, deduped."""
+    episodes = sorted(covered.get("episodes", []),
+                      key=lambda e: e.get("date", ""), reverse=True)[:days]
+    out: list[str] = []
+    for ep in episodes:
+        for t in ep.get("topics", []):
+            t = (t or "").strip()
+            if t and t not in out:
+                out.append(t)
+    return out
+
+
+def save_covered(covered: dict, date: str, topics: list[str],
+                 worklog_dates: list[str], path: Path = COVERED_PATH,
+                 keep_days: int = 14) -> None:
+    """Record today's episode topics + recapped note dates; prune old entries."""
+    episodes = [e for e in covered.get("episodes", []) if e.get("date") != date]
+    episodes.append({"date": date, "topics": [t.strip()[:120] for t in topics if t.strip()]})
+    episodes = sorted(episodes, key=lambda e: e.get("date", ""), reverse=True)[:keep_days]
+    wdates = sorted(set(covered.get("worklog_dates", [])) | set(worklog_dates),
+                    reverse=True)[:keep_days]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {"updated": datetime.now(timezone.utc).isoformat(),
+             "episodes": episodes, "worklog_dates": wdates},
+            indent=2, ensure_ascii=False,
+        )
+    )

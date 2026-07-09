@@ -667,8 +667,8 @@
   function showSheet(on){ $("#sheet").classList.toggle("show",on); $("#sheetBg").classList.toggle("show",on); }
 
   /* ---------------- BRIEF TAB (daily newsletter + podcast) ----------------
-     Fetches brief.enc — an AES-256-GCM-encrypted bundle the das-daily-brief
-     pipeline publishes to its (public) GitHub Pages every morning — decrypts
+     Fetches brief.enc — an AES-256-GCM-encrypted bundle this repo's brief/
+     pipeline publishes to GitHub Pages every morning — decrypts
      it locally with the key from Settings, and renders the research brief,
      the Nature digest, and a player for the podcast episode. The last good
      bundle is cached in localStorage so it stays readable offline mid-run. */
@@ -689,7 +689,7 @@
     return Uint8Array.from(bin, c=>c.charCodeAt(0));
   }
   // AES-GCM decrypt of raw (12-byte nonce ‖ ciphertext) bytes — matches
-  // src/publish_brief.py for both brief.enc (JSON) and *.mp3.enc (audio).
+  // brief/src/publish_brief.py for both brief.enc (JSON) and *.mp3.enc (audio).
   async function decryptBytesRaw(rawU8, keyB64){
     const key = await crypto.subtle.importKey("raw", b64uToBytes(keyB64), "AES-GCM", false, ["decrypt"]);
     return crypto.subtle.decrypt({name:"AES-GCM", iv:rawU8.slice(0,12)}, key, rawU8.slice(12));
@@ -961,7 +961,7 @@
       ${pushSubHTML()}
       <div class="hint" style="margin-top:10px">
         <div class="ht">🎧 ブリーフ連携について</div>
-        <p>復号キーを入れると「ブリーフ」タブに毎朝のニュースレター（リサーチブリーフ + Nature ダイジェスト）とポッドキャストが表示されます。プッシュ通知は ① このアプリを<b>ホーム画面に追加</b>（iOS 16.4+ / Android Chrome）→ ② 上のボタンで許可 → ③ 表示されるJSONを das-daily-brief リポジトリの Secret <b>PUSH_SUBSCRIPTIONS</b> に登録、で毎朝 7:45 頃に届きます。<br><span style="color:var(--faint)">Paste the key to unlock the Brief tab. For the morning push: install to Home Screen, enable above, then put the JSON into the PUSH_SUBSCRIPTIONS secret of das-daily-brief.</span></p>
+        <p>復号キーを入れると「ブリーフ」タブに毎朝のニュースレター（リサーチブリーフ + Nature ダイジェスト）とポッドキャストが表示されます。プッシュ通知は ① このアプリを<b>ホーム画面に追加</b>（iOS 16.4+ / Android Chrome）→ ② 上のボタンで許可 → ③ 表示されるJSONを この ccc2031-training リポジトリの Secret <b>PUSH_SUBSCRIPTIONS</b> に登録、で毎朝 7:45 頃に届きます。<br><span style="color:var(--faint)">Paste the key to unlock the Brief tab. For the morning push: install to Home Screen, enable above, then put the JSON into this repo's PUSH_SUBSCRIPTIONS secret.</span></p>
       </div>
 
       <div class="label">表示言語 · Language</div>
@@ -1026,7 +1026,7 @@
       <button class="btn btn-sm" id="sSubCopy" style="width:100%;margin-top:0">📋 JSONをコピー / Copy JSON</button>`;
   }
   /* Web Push registration. The subscription JSON is device-specific and must
-     be pasted once into the das-daily-brief repo's PUSH_SUBSCRIPTIONS secret
+     be pasted once into this repo's PUSH_SUBSCRIPTIONS secret
      (there is deliberately no backend to receive it automatically). Falls
      back to a plain local test notification where push is unsupported. */
   async function subscribePush(){

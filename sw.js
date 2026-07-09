@@ -1,5 +1,5 @@
 /* CCC 2031 — service worker (offline shell cache + morning Web Push) */
-const CACHE = "ccc2031-v6";
+const CACHE = "ccc2031-v7";
 const KEEP_CACHES = [CACHE, "ccc2031-audio-v1"];  // audio cache holds the decrypted episode
 const ASSETS = [
   "./",
@@ -33,7 +33,7 @@ self.addEventListener("activate", e => {
   );
 });
 
-/* Morning Web Push, sent by the das-daily-brief GitHub Action after it
+/* Morning Web Push, sent by this repo's daily-brief workflow after it
    publishes the day's encrypted brief. Payload: {title, body, url}. */
 self.addEventListener("push", e => {
   let d = {};
@@ -65,6 +65,12 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // only handle same-origin
+
+  // Daily-brief artifacts (brief.enc / audio .enc) are same-origin now:
+  // never intercept — they're cache-busted per fetch and cached decrypted
+  // elsewhere (localStorage / ccc2031-audio-v1). Caching them here would
+  // bloat the shell cache with a unique entry per ?v= timestamp.
+  if (url.pathname.includes("/brief/docs/")) return;
 
   // navigations → app shell fallback (offline-friendly SPA)
   if (req.mode === "navigate") {

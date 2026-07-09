@@ -223,9 +223,9 @@ test('podcast player persists across tab switches (element + position survive re
   assert.equal(w.document.querySelector('#main').querySelector('#miniAudio'), null, 'player is never inside #main');
 });
 
-test('decryptBrief opens a bundle encrypted by src/publish_brief.py (cross-language vector)', async () => {
+test('decryptBrief opens a bundle encrypted by brief/src/publish_brief.py (cross-language vector)', async () => {
   // Vector generated with the Python encryptor and a throwaway all-zero…31 key;
-  // regenerate via publish_brief.encrypt if the wire format ever changes.
+  // regenerate via brief/src/publish_brief.encrypt if the wire format ever changes.
   const TEST_KEY  = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
   const TEST_BLOB = 'mmkHBiYUMsR-ma93SdqnOQRZFQA4qAOEtqyiViHZjbP9SFfSrSX0x-d7QcqsApRXBAFSCaDGG-EKHroDMCkConWgDfIsgZHtSXlW5zNSjq4GjuSLD_j6T-wZL5kkvObnXY0kMIHxl35_ZSUKyh5aPv7SpGOtnO2rA4qy2yFSCBHr4mdZWLRW2utwl5Bd3S3FXKT8Y776pZXUSKXu9lL7uUPfxo_J';
   const w = boot();

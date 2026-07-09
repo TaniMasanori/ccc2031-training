@@ -3,6 +3,13 @@
 毎朝、GmailとGoogleカレンダーから情報を自動収集し、**LLM(Claude)が編集者として整理**して、
 **ポッドキャスト音声**と**7枚のスライドPDF**にまとめて自分に届ける個人エージェントです。
 
+> **モノレポ統合済み:** このパイプラインは [ccc2031-training](https://github.com/TaniMasanori/ccc2031-training)
+> リポジトリの `brief/` ディレクトリに統合されました（旧 `das-daily-brief` リポジトリはアーカイブ）。
+> ワークフローはリポジトリ直下の `.github/workflows/daily-brief.yml`（`working-directory: brief`）、
+> Secrets / Variables も **ccc2031-training** リポジトリに登録します。
+> 成果物は同じ GitHub Pages の `brief/docs/` 配下
+> （`https://tanimasanori.github.io/ccc2031-training/brief/docs/…`）で配信されます。
+
 ```
 GitHub Actions (毎朝cron)
       │
@@ -36,14 +43,9 @@ GitHub Actions (毎朝cron)
 ## セットアップ手順
 
 ### 1. リポジトリを用意
-このフォルダをそのまま GitHub リポジトリにします。
-
-```bash
-git init && git add . && git commit -m "init daily brief"
-# GitHubで空のリポジトリを作り、push
-git remote add origin https://github.com/<your-username>/das-daily-brief.git
-git push -u origin main
-```
+このパイプラインは **ccc2031-training リポジトリの `brief/`** に同梱済みです。
+新規セットアップは不要（別リポジトリに切り出す場合のみ、このフォルダを丸ごと新リポジトリにして
+ワークフローの `working-directory` を外してください）。
 
 ### 2. Google Cloud で OAuth を設定
 1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作成。
@@ -69,7 +71,7 @@ python scripts/get_refresh_token.py
 余裕を持たせるなら Professional(€69/月・5,000クレジット)。
 
 ### 5. GitHub に Secrets / Variables を登録
-リポジトリの **Settings → Secrets and variables → Actions**。
+**ccc2031-training** リポジトリの **Settings → Secrets and variables → Actions**。
 
 **Secrets(秘匿値):**
 | 名前 | 値 |
@@ -87,14 +89,15 @@ python scripts/get_refresh_token.py
 | `GMAIL_QUERY` | `newer_than:2d (label:paper-alerts OR from:scholar.google.com)` |
 | `TIMEZONE` | `America/Denver` |
 | `MAIL_TO` | 空欄でOK(自分宛) |
-| `PODCAST_BASE_URL` | `https://<your-username>.github.io/das-daily-brief` |
+| `PODCAST_BASE_URL` | `https://<your-username>.github.io/ccc2031-training/brief/docs` |
 | `PODCAST_TITLE` | `Daily Research Brief` |
 | `PODCAST_AUTHOR` | `Masanori Tani` |
 | `PODCAST_LANGUAGE` | `ja` |
 
-### 6. GitHub Pages を有効化(Phase 2 のRSS配信用)
-**Settings → Pages** で、ソースを **Deploy from a branch**、ブランチ `main` の **`/docs`** フォルダに設定。
-公開URLが `https://<your-username>.github.io/das-daily-brief` になり、これが `PODCAST_BASE_URL`。
+### 6. GitHub Pages
+ccc2031-training は **Deploy from a branch / `main` / ルート** で Pages 配信済み（PWA本体と同居）。
+このパイプラインの成果物はリポジトリ内の `brief/docs/` にコミットされるので、そのまま
+`https://<your-username>.github.io/ccc2031-training/brief/docs/…` で配信されます。追加設定は不要。
 
 ### 7. Gmail 側の準備(論文アラートの仕分け)
 Google Scholar / ジャーナルTOC / Elicit のアラートメールに、Gmailのフィルタで
@@ -102,6 +105,7 @@ Google Scholar / ジャーナルTOC / Elicit のアラートメールに、Gmail
 
 ### 8. ローカルで試運転
 ```bash
+cd brief                     # モノレポではここが作業ディレクトリ
 cp config.example.env .env   # 値を埋める
 export $(grep -v '^#' .env | xargs)
 python -m src.main           # まず PHASE=1 推奨
@@ -109,13 +113,12 @@ python test_offline.py       # 認証不要の自己テスト(任意)
 ```
 
 ### 9. 自動運用
-`.github/workflows/daily-brief.yml` が毎朝 13:00 UTC(≒山岳部 朝6〜7時)に実行します。
+リポジトリ直下の `.github/workflows/daily-brief.yml` が毎朝 12:30 UTC(≒朝6:30 MDT)に実行します。
 Actions タブの **Run workflow** で手動実行もできます。
 まず `PHASE=1` で数日まわして収集・キュレーションを安定させ、問題なければ `PHASE=2` に変更。
 
-### 10. ポッドキャストを購読
-ポッドキャストアプリ(Overcast / Pocket Casts / Apple Podcasts の「URLから追加」)に
-`https://<your-username>.github.io/das-daily-brief/podcast.xml` を貼って購読。
+### 10. 聴き方
+公開RSSは廃止済み。ポッドキャストはトレーニングPWAの「ブリーフ」タブで再生します（下記参照）。
 
 ---
 
@@ -178,21 +181,24 @@ cron は 12:30 UTC（≒朝6:30 MDT）。Nature ルーチン（12:00 UTC）の**
 ## ファイル構成
 
 ```
-.
-├── profile.md                     ← 研究プロフィール(LLMに毎回注入。要編集)
-├── config.example.env             ← 環境変数テンプレート
-├── requirements.txt
-├── scripts/get_refresh_token.py   ← OAuthトークン取得(ローカル一度きり)
-├── src/
-│   ├── config.py                  ← 設定の読込・検証
-│   ├── collect.py                 ← Gmail + Calendar 収集
-│   ├── curate.py                  ← Claude キュレーション(構造化出力)
-│   ├── state.py                   ← 既読論文の重複排除
-│   ├── slides.py                  ← 7枚スライドPDF生成
-│   ├── generate.py                ← AutoContent 音声生成(Phase 2)
-│   ├── distribute.py              ← RSS生成 + メール送信
-│   └── main.py                    ← オーケストレーター
-├── docs/                          ← GitHub Pages(podcast.xml / audio / index.html)
-├── state/seen.json                ← 重複排除state(Actionが書き戻す)
-└── .github/workflows/daily-brief.yml
+ccc2031-training/
+├── .github/workflows/daily-brief.yml  ← 毎朝のパイプライン(working-directory: brief)
+└── brief/
+    ├── profile.md                     ← 研究プロフィール(LLMに毎回注入。要編集)
+    ├── config.example.env             ← 環境変数テンプレート
+    ├── requirements.txt
+    ├── scripts/get_refresh_token.py   ← OAuthトークン取得(ローカル一度きり)
+    ├── src/
+    │   ├── config.py                  ← 設定の読込・検証
+    │   ├── collect.py                 ← Gmail + Calendar 収集
+    │   ├── curate.py                  ← Claude キュレーション(構造化出力)
+    │   ├── state.py                   ← 既読論文の重複排除
+    │   ├── slides.py                  ← 7枚スライドPDF生成
+    │   ├── generate.py                ← AutoContent 音声生成(Phase 2)
+    │   ├── distribute.py              ← エピソード管理 + メール送信
+    │   ├── publish_brief.py           ← 暗号化バンドル(brief.enc / *.mp3.enc)
+    │   ├── push.py                    ← 朝のWeb Push送信
+    │   └── main.py                    ← オーケストレーター
+    ├── docs/                          ← Pages配信物(brief.enc / audio/*.mp3.enc / episodes.json)
+    └── state/seen.json                ← 重複排除state(Actionが書き戻す)
 ```

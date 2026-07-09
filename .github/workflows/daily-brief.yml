@@ -1,0 +1,122 @@
+name: daily-brief
+
+# Cron is UTC. 12:30 UTC ≈ 05:30 (MST) / 06:30 (MDT) America/Denver.
+# The separate "Nature Daily Brief" cloud routine now runs at 12:00 UTC
+# (6:00 America/Denver) and finishes within a few minutes, so this 30-minute
+# gap is normally enough for its Gmail draft to be ready when this pipeline
+# pulls it — same-day content in both the podcast and the encrypted bundle.
+# Note: scheduled runs can be delayed at peak times, and GitHub disables
+# schedules after 60 days of repo inactivity (a manual run re-enables them).
+on:
+  schedule:
+    - cron: "30 12 * * *"
+  workflow_dispatch: {}   # lets you run it on demand from the Actions tab
+
+permissions:
+  contents: write          # needed to commit brief/state/ and brief/docs/ back
+
+concurrency:
+  group: daily-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: brief   # the pipeline lives under brief/; all its paths are CWD-relative
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: brief/requirements.txt
+
+      # Read-only, sparse (only the daily-notes folder) checkout of the private
+      # Obsidian vault, so the podcast can open with a recap of recent work.
+      # continue-on-error: a vault hiccup must never block the brief.
+      # (checkout paths are workspace-relative, so brief/ must be explicit here)
+      - name: Check out Obsidian daily notes (read-only, sparse)
+        uses: actions/checkout@v5
+        continue-on-error: true
+        with:
+          repository: TaniMasanori/obsidian
+          ssh-key: ${{ secrets.OBSIDIAN_DEPLOY_KEY }}
+          sparse-checkout: 10_Daily
+          sparse-checkout-cone-mode: false
+          path: brief/_obsidian
+
+      - name: Install a Japanese-capable font (for the slide PDF)
+        run: sudo apt-get update && sudo apt-get install -y fonts-ipafont-gothic
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the daily brief
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001' }}
+          AUTOCONTENT_API_KEY: ${{ secrets.AUTOCONTENT_API_KEY }}
+          PHASE: ${{ vars.PHASE || '2' }}
+          GMAIL_QUERY: ${{ vars.GMAIL_QUERY }}
+          # Empty by default: personal inbox mail is not collected, so it never
+          # enters the publicly-hosted podcast. Set the GMAIL_OTHER_QUERY repo
+          # variable to opt back in.
+          GMAIL_OTHER_QUERY: ${{ vars.GMAIL_OTHER_QUERY }}
+          TIMEZONE: ${{ vars.TIMEZONE || 'America/Denver' }}
+          MAIL_TO: ${{ vars.MAIL_TO }}
+          PODCAST_BASE_URL: ${{ vars.PODCAST_BASE_URL }}
+          PODCAST_TITLE: ${{ vars.PODCAST_TITLE || 'Daily Research Brief' }}
+          PODCAST_AUTHOR: ${{ vars.PODCAST_AUTHOR || 'Me' }}
+          PODCAST_LANGUAGE: ${{ vars.PODCAST_LANGUAGE || 'ja' }}
+          EPISODE_RETENTION: ${{ vars.EPISODE_RETENTION || '1' }}
+          REDACT_NAMES: ${{ vars.REDACT_NAMES || 'Masanori,Tani' }}
+          FONT_PATH: /usr/share/fonts/opentype/ipafont-gothic/ipagp.ttf
+          # Training-app integration: encrypted newsletter bundle (brief/docs/brief.enc).
+          # Empty BRIEF_ENC_KEY disables the bundle + push entirely.
+          BRIEF_ENC_KEY: ${{ secrets.BRIEF_ENC_KEY }}
+          NATURE_DIGEST_QUERY: ${{ vars.NATURE_DIGEST_QUERY || 'in:draft subject:"Nature Daily Brief" newer_than:1d' }}
+          TRAINING_APP_URL: ${{ vars.TRAINING_APP_URL || 'https://tanimasanori.github.io/ccc2031-training/' }}
+          # Recap of recent work from the Obsidian daily notes checked out above.
+          # If the checkout failed, this dir lacks 10_Daily and the recap is
+          # skipped gracefully.
+          OBSIDIAN_DIR: _obsidian
+          OBSIDIAN_DAILY_SUBDIR: ${{ vars.OBSIDIAN_DAILY_SUBDIR || '10_Daily' }}
+          OBSIDIAN_LOOKBACK_DAYS: ${{ vars.OBSIDIAN_LOOKBACK_DAYS || '2' }}
+        run: python -m src.main
+
+      - name: Commit updated state and podcast feed
+        run: |
+          git config user.name  "daily-brief-bot"
+          git config user.email "actions@github.com"
+          git add state/ docs/
+          if git diff --staged --quiet; then
+            echo "nothing to commit"
+          else
+            git commit -m "daily brief: $(date -u +%Y-%m-%d)"
+            # Rebase onto whatever landed on main since checkout (e.g. a
+            # manual commit during a workflow_dispatch test run) before
+            # pushing, so an unrelated race doesn't drop this run's output.
+            git fetch origin main
+            git rebase origin/main
+            git push
+          fi
+
+      # After the commit so the fresh brief.enc is already deploying to Pages
+      # when the phone buzzes. Skips itself when push isn't configured or the
+      # bundle wasn't published this run (no out/push_payload.json).
+      - name: Send morning push notification
+        env:
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
+          PUSH_CLAIMS_EMAIL: ${{ vars.PUSH_CLAIMS_EMAIL || 'masanori.tani.t@gmail.com' }}
+        run: |
+          if [ -f out/push_payload.json ]; then
+            sleep 90   # give the Pages build a moment to serve the new brief
+          fi
+          python -m src.push

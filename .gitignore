@@ -15,3 +15,6 @@ npm-debug.log*
 # Logs / temp
 *.log
 .cache/
+
+# ByteRover CLI local context tree
+.brv/

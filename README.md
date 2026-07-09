@@ -23,19 +23,24 @@ A trail-training menu / completion tracker / weekly progress PWA on the road to 
 3. ホームのアイコンから起動 → 全画面・オフラインで動作。
 
 ## デイリーブリーフ連携 / Daily-brief integration
-「ブリーフ」タブに、[das-daily-brief](https://github.com/TaniMasanori/das-daily-brief) が毎朝生成する
+「ブリーフ」タブに、このリポジトリの **`brief/` パイプライン**（旧
+[das-daily-brief](https://github.com/TaniMasanori/das-daily-brief)、モノレポ統合済み）が毎朝生成する
 **ニュースレター（リサーチブリーフ + Nature ダイジェスト + 最近の作業サマリー）と
 日本語ポッドキャスト**が表示されます。すべてこのアプリ専用（公開RSS配信なし）です。
 
+パイプラインは `.github/workflows/daily-brief.yml`（毎朝 12:30 UTC）が実行し、
+暗号化した成果物を `brief/docs/`（同じ GitHub Pages 上）にコミットします。
+セットアップ詳細は [`brief/README.md`](brief/README.md) を参照。
+
 - ニュースレターも**ポッドキャスト音声も** AES-256-GCM で暗号化されて Pages に置かれ、
-  アプリが端末内で復号します。**設定 → 復号キー** に das-daily-brief 側の `BRIEF_ENC_KEY`
+  アプリが端末内で復号します。**設定 → 復号キー** にこのリポジトリの Secret `BRIEF_ENC_KEY`
   と同じ値を一度だけ貼り付けてください（この1つの鍵で本文も音声も復号します）。
 - ポッドキャストは「▶ 音声を再生」をタップすると数MBをDL＋復号して再生します。復号済み音声は
   Cache API に保持されるので、圏外のトレイル上でもオフライン再生できます。
 - 朝のプッシュ通知（毎朝 6:30 頃、Web Push）:
   1. アプリをホーム画面に追加（iOS 16.4+ / Android Chrome）。
   2. 設定 → **朝のプッシュ通知を有効化**。
-  3. 表示される購読JSONをコピーし、das-daily-brief リポジトリの Secret **`PUSH_SUBSCRIPTIONS`**
+  3. 表示される購読JSONをコピーし、このリポジトリの Secret **`PUSH_SUBSCRIPTIONS`**
      に登録（JSON配列。端末が2台なら `[ {...}, {...} ]`）。
 - 最後に取得したブリーフは localStorage にキャッシュされ、圏外のトレイル上でも読めます。
 

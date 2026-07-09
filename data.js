@@ -65,13 +65,13 @@ window.CCC_DATA = {
   },
 
   /* Daily-brief integration (ブリーフ tab).
-     baseUrl hosts the das-daily-brief GitHub Pages output: the public podcast
-     audio + brief.enc, an AES-256-GCM-encrypted newsletter bundle. The
-     decryption key is entered once in Settings (never committed here).
-     vapidPublicKey pairs with the VAPID_PRIVATE_KEY secret in the
-     das-daily-brief repo, which sends the morning Web Push. */
+     baseUrl hosts this repo's brief/ pipeline output on GitHub Pages: the
+     encrypted podcast audio + brief.enc, an AES-256-GCM-encrypted newsletter
+     bundle. The decryption key is entered once in Settings (never committed
+     here). vapidPublicKey pairs with the VAPID_PRIVATE_KEY secret in this
+     repo, whose daily-brief workflow sends the morning Web Push. */
   brief: {
-    baseUrl: "https://tanimasanori.github.io/das-daily-brief",
+    baseUrl: "https://tanimasanori.github.io/ccc2031-training/brief/docs",
     vapidPublicKey: "BNhfmMJZjGIZ7HjhjOpCUtOLEF0rS4LlAYGxhmXvi-hUwGPHM2vTTeWeHR1wp9e0bh7hTBDcRFJJYI4ZzGEyz28"
   },
 

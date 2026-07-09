@@ -1,0 +1,22 @@
+# Google APIs (Gmail + Calendar)
+google-auth>=2.28
+google-auth-oauthlib>=1.2
+google-api-python-client>=2.120
+
+# LLM curation
+anthropic>=0.40
+
+# AutoContent API calls + downloads
+requests>=2.31
+
+# Slide rendering (pure-Python, CI-friendly, no system deps)
+fpdf2>=2.7
+
+# Markdown -> HTML for the email body
+markdown>=3.6
+
+# Encrypted brief bundle for the training app (AES-256-GCM)
+cryptography>=42.0
+
+# Morning Web Push to the training PWA
+pywebpush>=2.0

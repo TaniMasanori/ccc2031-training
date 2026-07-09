@@ -1,0 +1,22 @@
+# Secrets / credentials — never commit these
+*.env
+.env
+client_secret*.json
+*credentials*.json
+token.json
+token.pickle
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local working output (not the published docs/ folder)
+out/
+
+# Obsidian vault checkout (CI pulls it read-only; never commit it here)
+_obsidian/
+
+# OS
+.DS_Store

@@ -1,16 +1,23 @@
 name: daily-brief
 
-# Cron is UTC. 12:30 UTC ≈ 05:30 (MST) / 06:30 (MDT) America/Denver.
-# The separate "Nature Daily Brief" cloud routine now runs at 12:00 UTC
-# (6:00 America/Denver) and finishes within a few minutes, so this 30-minute
-# gap is normally enough for its Gmail draft to be ready when this pipeline
-# pulls it — same-day content in both the podcast and the encrypted bundle.
-# Note: scheduled runs can be delayed at peak times, and GitHub disables
-# schedules after 60 days of repo inactivity (a manual run re-enables them).
+# Delivery target: ~05:05 America/Denver (11:05 UTC during MDT).
+# GitHub `schedule` events queue at peak times (observed 1.5-3h late), so the
+# ON-TIME path is the "daily-brief trigger" Claude cloud routine, which fires
+# workflow_dispatch (or pushes .github/trigger/daily-brief) at 11:00 UTC
+# sharp — 30 min after the 10:30 UTC "Nature Daily Brief" routine has drafted
+# today's digest in Gmail.
+# The cron below is only a FALLBACK: 12:23 UTC (off-peak minute), typically
+# delayed to ~6:30-9am Denver time, and the guard job skips it whenever the
+# routine's run already delivered today's brief.
+# Note: GitHub disables schedules after 60 days of repo inactivity (a manual
+# run re-enables them).
 on:
   schedule:
-    - cron: "30 12 * * *"
-  workflow_dispatch: {}   # lets you run it on demand from the Actions tab
+    - cron: "23 12 * * *"
+  workflow_dispatch: {}   # on-demand runs + the cloud routine's primary trigger
+  push:
+    branches: [main]
+    paths: [".github/trigger/daily-brief"]   # the routine's fallback trigger
 
 permissions:
   contents: write          # needed to commit brief/state/ and brief/docs/ back
@@ -20,7 +27,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Fallback dedup: the delayed cron must not redeliver (second email + push)
+  # a brief the 11:00 UTC routine already sent. Non-schedule events (manual
+  # dispatch, the routine's trigger) always deliver.
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      deliver: ${{ steps.check.outputs.deliver }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "deliver=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Match on the pipeline's LOCAL date (the bot commit message uses it
+          # too): an evening manual run must not stamp "tomorrow" in UTC terms
+          # and suppress the next morning's fallback.
+          today=$(TZ="${{ vars.TIMEZONE || 'America/Denver' }}" date +%Y-%m-%d)
+          since=$(date -u -d '18 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          # Fail OPEN (n=0 -> deliver) on API hiccups: a rare duplicate brief
+          # beats silently skipping the only delivery of the day.
+          n=$(gh api "repos/${GITHUB_REPOSITORY}/commits?since=${since}&per_page=100" \
+                --jq "[.[].commit.message | select(startswith(\"daily brief: ${today}\"))] | length" \
+                || echo 0)
+          [ -n "$n" ] || n=0
+          if [ "$n" -gt 0 ]; then
+            echo "brief already delivered today ($n bot commit(s)) — skipping the cron fallback"
+            echo "deliver=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deliver=true" >> "$GITHUB_OUTPUT"
+          fi
+
   brief:
+    needs: guard
+    if: needs.guard.outputs.deliver == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,11 +137,17 @@ jobs:
         run: |
           git config user.name  "daily-brief-bot"
           git config user.email "actions@github.com"
+          # Never commit plaintext audio: only the encrypted *.mp3.enc belongs
+          # on public Pages. A failed encrypt_audio can leave the raw MP3 here.
+          find docs/audio -name '*.mp3' -delete 2>/dev/null || true
           git add state/ docs/
           if git diff --staged --quiet; then
             echo "nothing to commit"
           else
-            git commit -m "daily brief: $(date -u +%Y-%m-%d)"
+            # Local (pipeline-timezone) date, matching the guard job's dedup
+            # key — a UTC date would roll over at 18:00 Denver and make an
+            # evening test run suppress the NEXT day's cron fallback.
+            git commit -m "daily brief: $(TZ="${{ vars.TIMEZONE || 'America/Denver' }}" date +%Y-%m-%d)"
             # Rebase onto whatever landed on main since checkout (e.g. a
             # manual commit during a workflow_dispatch test run) before
             # pushing, so an unrelated race doesn't drop this run's output.

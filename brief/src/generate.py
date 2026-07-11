@@ -178,7 +178,15 @@ def create_podcast(api_key: str, brief_text: str, paper_urls: list[str],
                     + worklog_segment + nature_segment + outro + focus)
     body = {"resources": resources, "text": instructions, "outputType": "audio"}
     r = requests.post(f"{BASE}/Content/Create", headers=_headers(api_key), json=body, timeout=60)
-    r.raise_for_status()
+    if r.status_code >= 400:
+        # Surface the response body: AutoContent returns the actual reason
+        # (e.g. error_code 201 "subscription expired") only there, and a bare
+        # raise_for_status() hides it from the run log and the failure email.
+        # Strip any markup first — this string ends up inside the HTML email,
+        # where raw tags (e.g. a CDN error page) would render invisibly.
+        detail = re.sub(r"<[^>]*>", " ", r.text)[:300]
+        raise RuntimeError(
+            f"AutoContent Create failed: HTTP {r.status_code} — {detail}")
     request_id = _extract_id(r)
     if not request_id:
         raise RuntimeError(f"Could not parse request id from create response: {r.text[:300]}")

@@ -127,7 +127,6 @@ def summarize_recent_work(cfg: Config, today: datetime,
             resp = client.messages.create(
                 model=cfg.anthropic_model,
                 max_tokens=2000,
-                temperature=0.2,
                 system=system,
                 tools=[RECAP_TOOL],
                 tool_choice={"type": "tool", "name": "submit_worklog_recap"},

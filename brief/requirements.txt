@@ -4,7 +4,7 @@ google-auth-oauthlib>=1.2
 google-api-python-client>=2.120
 
 # LLM curation
-anthropic>=0.40
+anthropic>=0.40,<2
 
 # AutoContent API calls + downloads
 requests>=2.31

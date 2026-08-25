@@ -137,7 +137,6 @@ def curate(cfg: Config, raw: dict, today: str) -> dict:
             resp = client.messages.create(
                 model=cfg.anthropic_model,
                 max_tokens=8000,
-                temperature=0.2,
                 system=system,
                 tools=[BRIEF_TOOL],
                 tool_choice={"type": "tool", "name": "submit_daily_brief"},
